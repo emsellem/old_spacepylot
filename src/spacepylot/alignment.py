@@ -273,7 +273,7 @@ class AlignmentBase(object):
         convolve_reference : int or None, optional
             If a number, it will convolve the reference image. The number refers to
             the sigma of the folding Gaussian to convolve by in units of pixels
-            (I think). The default is None.
+git remote set-url origin            (I think). The default is None.
         guess_translation : 2-array, optional
             A starting translation you want to apply before running
             the alignment. The default is [0,0]. Positive values translate
