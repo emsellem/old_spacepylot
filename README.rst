@@ -34,10 +34,11 @@ spacepylot
 ==========
 
 
-    Add a short description here!
+    spacepylot provides modules to align astronomical image with a reference frame
 
 
-A longer description of your project goes here...
+spacepylot drives you through the alignment procedure to align frames with a reference image.
+It uses optical flow methods to do so.
 
 
 .. _pyscaffold-notes:
