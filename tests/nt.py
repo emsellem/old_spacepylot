@@ -1,12 +1,6 @@
 
-import importlib.resources as pkg_resources
-
 import spacepylot.alignment as align
 import spacepylot.plotting as pl
-
-sp_path = spacepylot.__path__[0]
-refpath = pkg_resources.path(data,'ref_ima.fits')
-prealign_path = pkg_resources.path(data,'prealign_ima.fits')
 
 trys = 10
 shifts_op = [0,0]
@@ -15,6 +9,7 @@ rotation_op = 0
 convolve_prealign = 1
 ref_path = "/home/soft/python/spacepylot/src/spacepylot/data/ref_ima.fits"
 prealign_path = "/home/soft/python/spacepylot/src/spacepylot/data/prealign_ima.fits"
+
 
 op = align.AlignOpticalFlow.from_fits(prealign_path, ref_path, 
         guess_translation=shifts_op, guess_rotation=rotation_op, 

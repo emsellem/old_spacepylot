@@ -225,12 +225,18 @@ class AlignmentBase(object):
         # you apply a rotation and then a translation, it will accurately track
         # the total rotation, then translation that has been applied
         #
-        self.matrix_transform = np.linalg.inv(
-            au.create_euclid_homography_matrix(
-                guess_rotation,
-                -np.array(guess_translation)
-            )
-        )
+        self.matrix_transform = np.identity(3)
+
+        ## OLD - DEPRECATED - if done like this, doing the 
+        ##    transformation twice: once now, and once during
+        ##    the transformation (translate_prealign etc).
+        ## Hence = TO BE REMOVED if CONFIRMED
+        ## self.matrix_transform = np.linalg.inv(
+        ##     au.create_euclid_homography_matrix(
+        ##         guess_rotation,
+        ##         -np.array(guess_translation)
+        ##     )
+        ## )
 
         # Applying a guess/known translation and or rotation
         try:
@@ -259,7 +265,7 @@ class AlignmentBase(object):
         filename_prealign : str
             Filepath to the prealign fits file image.
         filename_reference : str
-            Filepath to the reference fits file image.
+            Filepath gh repo clone emsellem/spacepylotto the reference fits file image.
         hdu_index_prealign : int or str, optional
             Index or dict name for prealign image if the hdu object has
             multiple objects. The default is 0.
@@ -364,8 +370,7 @@ git remote set-url origin            (I think). The default is None.
 
 
 class AlignHomography(object):
-    """
-    Finds the offset between two images by estimating the matrix transform needed
+    """Finds the offset between two images by estimating the matrix transform needed
     to reproduce the vector changes between a set of xy coordinates.
 
     This can align an image given a minimum of 4 xy, grid points from the reference
@@ -402,8 +407,7 @@ class AlignHomography(object):
                                   method=transform.EuclideanTransform,
                                   reverse_homography=False,
                                   ):
-        """
-        Performs a fit to estimate the homography matrix that represents the grid
+        """Performs a fit to estimate the homography matrix that represents the grid
         transformation. Uses ransac to robustly eliminate vector outliers that
         something such as optical flow, or other feature extracting methods
         might output. The parameters are not currently changeable by the user
@@ -467,8 +471,7 @@ class AlignHomography(object):
 
 
 class AlignOpticalFlow(AlignmentBase, AlignHomography):
-    """
-    Optical flow is a gradient based method that find small changes between
+    """Optical flow is a gradient based method that find small changes between
     two images as vectors for each pixel. Recommended for translations and
     rotations that are less than 5 pixels. If larger than this, use
     the iterative method.
@@ -505,8 +508,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         return v, u
 
     def _prep_arrays(self, num_per_dimension):
-        """
-        Gets a sample of coordinates from the optical flow to perform
+        """Gets a sample of coordinates from the optical flow to perform
         homography on. A sample is needed because the full image is expensive
         to run.
 
@@ -540,8 +542,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     def get_translation_rotation_single(self, num_per_dimension=50,
                                         homography_method=transform.EuclideanTransform,
                                         reverse_homography=False):
-        """
-        Works out the translation and rotation using homography once
+        """Works out the translation and rotation using homography once
 
         Parameters
         ----------
@@ -597,8 +598,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     def get_translation_rotation(self, niter=20, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
                                  reverse_homography=False):
-        """
-        If the solution is offset by more than ~5 pixels, optical flow struggles
+        """If the solution is offset by more than ~5 pixels, optical flow struggles
         to match up the pixels. This method gets around this by applying optical
         flow multiple times to that the shifts and rotations converge to a solution.
         TODO: Make this stop after a the change between solutions is smaller that
@@ -648,5 +648,158 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         return self.shifts, self.rotation
 
 
-if __name__ == "__main__":
-    pass
+class AlignmentCrossCorrelate(AlignmentBase):
+    """Finds the translational offset between the reference and prealign images
+    using phase cross correlation. Phase cross correlation works by converting
+    the images into fourier space. Here, translational offsets are represented
+    as a phase difference, where there is no signal when they are out of phase,
+    and a sharp peak when the image is in phase. This sharp peak is used
+    to work out the offset between two images.
+    """
+
+
+    def fft_phase_correlation(self, prealign, reference, resolution=1000, **kwargs):
+        """
+        Method for performing the cross correlation between two images.
+        Parameters
+        ----------
+        prealign : 2d array
+            Image to be aligned.
+        reference : 2d array
+            Reference image with the correct alignment.
+        resolution : int, optional
+            Determines how precise the algorthm will run. For example, 10 will
+            find a solution closest to the first decimal place, 100 the second
+            etc. The default is 1000.
+        **kwargs : skimage.registration.phase_cross_correlation properties, optional
+            kwargs are optional parameters for
+            skimage.registration.phase_cross_correlation
+        Returns
+        -------
+        self.shifts : 2-array
+            The offset needed to align the prealign image with the
+            reference image.  Positive values shift the prealign in the negative
+            direction i.e A coordinate of 3,3, with an offset of 1,1
+            will be shifted to 2,2. If the image have been prepared properly
+            the returned shifts encode rotational offsets and scale changes
+            between the two images.
+        """
+        upsample_factor = kwargs.pop('upsample_factor', resolution)
+        self.shifts, error,  phasediff = phase_cross_correlation(
+            reference_image=reference,
+            moving_image=prealign,
+            upsample_factor=upsample_factor, **kwargs
+            )
+        return self.shifts
+
+
+class AlignTranslationPCC(AlignmentCrossCorrelate):
+    """Class used to find only the translational offset between a pair of
+    images using phase cross correlation.
+    """
+
+    def get_translation(self, split_image=1, over_shifted=20, resolution=1000, **kwargs):
+        """Method to perform phase cross correlation to find translational offset
+        between two images of equal size. Artifacts can affect the performance
+        of this method, therefore to make this method more robust,
+        the images can be split into quarters (2) 9ths (3) etc, and
+        the method is run independently in each section. Any offset found
+        that has an really bad solution (as defined by the `over_shifted`
+        parameter (units of pixels), are ignored. Final solution returns
+        the median solution of all valid sections.
+
+        Parameters
+        ----------
+        split_image : int, optional
+            The number of subsections used to find the offset solution.
+            1 uses the origonal image, 2 splits the image 2x2=4 times,
+            3  is 3x3=9 times etc. The default is 1.
+        over_shifted : float or int, optional
+            Defines the limit on what is considered a plausable offset
+            to find in either the x or y directions (in number of pixels).
+            Any offset in x or y that is larger than this value are ignored.
+            The default is 20.
+        resolution : int, optional
+            Determines how precise the algorthm will run. For example, 10 will
+            find a solution closest to the first decimal place, 100 the second
+            etc. The default is 1000.
+        **kwargs : skimage.registration.phase_cross_correlation properties, optional
+            kwargs are optional parameters for
+            skimage.registration.phase_cross_correlation
+        Returns
+        -------
+        self.shifts : 2-array
+            The recovered shifts, in pixels.
+        """
+
+        if self.verbose:
+            print('\nSpliting up image into %dx%d parts and returning median'\
+                  ' offset found for all panels.' %(split_image, split_image))
+            print('A pixel shift > %.2f pixels in either the x or the y direction '\
+                  'will be ignored from the final offset calculation.' % over_shifted)
+        self.all_shifts  = []
+
+        for i in range(split_image):
+            for j in range(split_image):
+                split_prealign, split_reference = self._get_split_images(split_image, (i, j))
+                self.shifts = self.fft_phase_correlation(split_prealign, split_reference, resolution, **kwargs)
+
+                #ignores pixels translations that are too large
+                if any(np.abs(self.shifts) > over_shifted):
+                    continue
+                else:
+                    self.all_shifts.append(self.shifts)
+
+        self.shifts = np.median(self.all_shifts, axis=0)
+        # self._update_transformation_matrix(0, self.shifts)
+        added_shifts = np.sum(self.manually_applied_offsets['translations'], axis=0)
+        self.print.get_translation(self.shifts, added_shifts)
+        self.shifts += added_shifts
+        return self.shifts
+
+    def _split(self, size, num):
+        """For a given length, and division position within an axis, works
+        out the start and end indices of that sub section of the axis.
+        If an image has been subdiveded 2 times (4 quadrants), so
+        the length of the quantrant sides are axis/2, `num`=0 is used
+        to get the start and end indices of that quantant.
+
+        Parameters
+        ----------
+        size : int
+            Length of subaxis.
+        num : int
+            start location of subaxis.
+        Returns
+        -------
+        lower : int
+            Lower index position of a given length.
+        upper : int
+            Upper index position of a given length.
+        """
+        lower, upper = int(size) * np.array([num, num+1])
+        return lower, upper
+
+    def _get_split_images(self, split_image, nums):
+        """Returns subsection of a given image split into smaller sections
+        Parameters
+        ----------
+        split_image : int
+            The number of subsections used to find the offset solution.
+            1 uses the origonal image, 2 splits the image 2x2=4 times,
+            3  is 3x3=9 times etc. The default is 1.
+        nums : 2-array of ints
+            the ith and jth subsection location.
+        Returns
+        -------
+        split_pre : 2darray
+            the ith, jth subsection of the prealigned image
+        split_ref : 2darray
+            the corresponding ith, jth subsection of the reference image.
+        """
+        split_size = np.array(np.shape(self.reference_filter)) / split_image
+        [lower_y, upper_y], [lower_x, upper_x] = [self._split(split_size[n], nums[n])
+                                                  for n in [0, 1]]
+        split_pre = self.prealign_filter[lower_y:upper_y, lower_x:upper_x]
+        split_ref = self.reference_filter[lower_y:upper_y, lower_x:upper_x]
+        return split_pre, split_ref

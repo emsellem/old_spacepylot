@@ -333,7 +333,7 @@ def remove_overlapping_tickers_for_vertical_subplots(bin_adjust=0, *axes_objects
     remove_x_ticker_labels_for_subplots(*axes_objects)
 
     nbins = len(axes_objects[0].get_xticklabels())
-    for ax in axes_objects[:]:
+    for ax in axes_objects[1:]:
         ax.yaxis.set_major_locator(MaxNLocator(nbins=nbins - bin_adjust, prune='upper'))
 
 
@@ -341,10 +341,10 @@ def remove_y_ticker_labels_for_subplots(*axes_objects):
     """Removes overlapping tickers from y
     """
 
-    plt.setp([ax.get_yticklabels() for ax in axes_objects[1:]], visible=False)
+    plt.setp([ax.get_yticklabels() for ax in axes_objects[:]], visible=False)
 
 
-def remove_overlapping_tickers_for_horizontal_subplots(*axes_objects):
+def remove_overlapping_tickers_for_horizontal_subplots(bin_adjust=0, *axes_objects):
     """This removes overlapping ticklabels from subplots which have no hspace.
     """
     remove_y_ticker_labels_for_subplots(*axes_objects)
@@ -384,7 +384,3 @@ def minor_tickers(ax_object=None, **kwargs):
         ax_object.yaxis.set_minor_locator(AutoMinorLocator())
 
     scientific_tickers(ax_object, **kwargs)
-
-
-if __name__ == "__main__":
-    pass

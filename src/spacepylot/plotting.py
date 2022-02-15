@@ -179,6 +179,151 @@ def make_red_blue_overlay(red_image, blue_image):
 
     return rgb_image
 
+def crop_data(data, border=10):
+    """Crop a 2D data and return it cropped after a border
+    has been removed (number of pixels) from each edge
+    (borderx2 pixels are removed from each dimension)
+    
+    Input
+    -----
+    data: 2d array
+        Array which has the signal to be cropped
+    border: int
+        Number of pixels to be cropped at each edge
+    
+    Returns
+    -------
+    cdata: 2d array
+        Cropped data array
+    """
+    if border <= 0 :
+        return data
+
+    if data.ndim != 2:
+        upipe.print_warning("Input data to crop is not 2, "
+                      "returning the original data")
+        return data
+
+    if (data.shape[0] > 2 * border) & (data.shape[1] > 2 * border):
+        return data[border:-border, border:-border]
+    else:
+        upipe.print_warning("Data is not being cropped, as shape is {0} "
+             " while border is {1}".format(data.shape, border))
+        return data
+
+def get_flux_range(data, low=2, high=98, border=25):
+    """Get the range of fluxes within the array
+    by looking at percentiles.
+     
+    Input
+    -----
+    data: 2d array
+        Input array with signal to process
+    low, high: two floats (10, 99)
+        Percentiles to consider to filter
+    
+    Returns
+    -------
+    lperc, hperc: 2 floats
+        Low and high percentiles
+    """
+    # Omit the border pixels
+    data = crop_data(data, border)
+
+    # Clean up the NaNs
+    data = np.nan_to_num(data)
+    if data.size > 0:
+        lperc = np.percentile(data[data > 0.], low)
+        hperc = np.percentile(data[data > 0.], high)
+    else:
+        lperc, hperc = 0., 1.
+
+    return lperc, hperc
+
+def make_contours(comp_image, ref_image, ax=None, title='', 
+                  **kwargs):
+    """Show the contours for two images
+
+    Parameters
+    ----------
+    comp_image : 2darray
+        2d array containing the red channel image
+    ref_image : 2d array
+         2d array containing the blue/cyan channel image.
+    ax : matplotlib.pyplot ax, optional
+        Matplotlib axis object. Default is None
+    title : str, optional
+        Sets title of the given image. The default is ''.
+
+    Returns
+    -------
+    ax : matplotlib.pyplot ax, optional
+        Matplotlib axis object
+    """
+    if ax is None:
+        ax = plt.gca()
+
+    # Defining the levels
+    levels = kwargs.pop('levels', None)
+    nlevels = int(kwargs.pop('nlevels', 10))
+
+    if levels is None:
+        # Find the high and low levels
+        lowlevel, highlevel = get_flux_range(comp_image)
+        levels = np.linspace(np.log10(lowlevel),
+                             np.log10(highlevel), 
+                             nlevels)
+
+    # plotting the first contour - comparison image
+    compset = ax.contour(np.log10(comp_image), levels, colors='k', 
+                         origin='lower', linestyles='solid')
+    # plotting the second contour - reference image
+    refset = ax.contour(np.log10(ref_image), levels=levels,
+                                 colors='r', origin='lower', alpha=0.5, 
+                                 linestyles='solid')
+    ax.set_aspect('equal')
+    h1,_ = compset.legend_elements()
+    h2,_ = refset.legend_elements()
+    ax.legend([h1[0], h2[0]], ['COMP', 'REF'])
+    ax.set_title(title)
+
+    return ax
+
+def make_division(comp_image, ref_image, ax=None, title='', **kwargs):
+    """Show the division between the two images
+
+    Parameters
+    ----------
+    comp_image : 2darray
+        2d array containing the red channel image
+    ref_image : 2d array
+         2d array containing the blue/cyan channel image.
+    ax : matplotlib.pyplot ax, optional
+        Matplotlib axis object. Default is None
+    title : str, optional
+        Sets title of the given image. The default is ''.
+    percentage : float, optional
+        Default is 5. Will be used as cuts of the colour table
+
+    Returns
+    -------
+    ax : matplotlib.pyplot ax, optional
+        Matplotlib axis object
+    """
+    if ax is None:
+        ax = plt.gca()
+
+    # Percentage
+    percentage = kwargs.pop('percentage', 5.0)
+
+    # Show the percentage division
+    ratio = 100. * (ref_image - comp_image) / (comp_image + 1.e-12)
+    im = ax.imshow(ratio, vmin=-percentage, vmax=percentage)
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+
+    ax.set_title(title)
+
+    return ax
 
 def plot_rgb(rgb_image, ax=None, title='', **kwargs):
     """Plots given rgb array
@@ -199,7 +344,7 @@ def plot_rgb(rgb_image, ax=None, title='', **kwargs):
 
     """
     if ax is None:
-        plt.gca()
+        ax = plt.gca()
 
     ax.imshow(rgb_image, origin='lower', **kwargs)
     ax.set_title(title)
@@ -233,7 +378,7 @@ def plot_image(image, ax=None, title='', vmin_perc=5, vmax_perc=95,
     vmax = kwargs.pop('vmax', vmax)
 
     if ax is None:
-        plt.gca()
+        ax = plt.gca()
 
     ax.imshow(image, origin='lower', vmin=vmin, vmax=vmax, **kwargs)
     ax.set_title(title)
@@ -249,11 +394,13 @@ prealign_titles = {
     'vector-fields': 'Vector field'
 }
 align_titles = {
-    'red-blue': r'Align-red, reference-cyan. $\Delta$y: %.3f, '
-                r'$\Delta$x: %.3f, $\Delta$$\theta$: %.3f',
-    'prealign-vs-align': r'Aligned-reference. $\Delta$y: %.3f, '
-                         r'$\Delta$x: %.3f, $\Delta$$\theta$: %.3f',
-    'vector-fields': 'Vector field average removed [y=%.2f,x=%.2f]'
+    'red-blue': r'Align-red, reference-cyan. Dy: %.3f, '
+                r'Dx: %.3f, Dtheta: %.3f',
+    'prealign-vs-align': r'Aligned-reference. Dy: %.3f, '
+                         r'Dx: %.3f, Dtheta: %.3f',
+    'vector-fields': 'Vector field average removed [y=%.2f,x=%.2f]',
+    'contours': 'Comparison contours',
+    'division': 'Comparison division'
 }
 
 titles = {
@@ -362,7 +509,7 @@ class AlignmentPlotting:
         hdu_index_reference : int or str, optional
             Index or dict name for reference image if the hdu object has
             multiple pbjects. The default is 0.
-       rotation_fit : dict, optional
+        rotation_fit : dict, optional
            Dictionary parameters showing the rotational solution found using
            the iterative phase cross correlation method. The default is {}.
 
@@ -473,8 +620,40 @@ class AlignmentPlotting:
         ax1 = plot_rgb(rgb_after,  ax=axs[1],
                        title=titles['after']['red-blue'] % (*self.shifts, self.rotation))
 
-        fT.remove_overlapping_tickers_for_horizontal_subplots(1, *axs)
-        [fT.minor_tickers(ax) for ax in axs]
+        # [fT.minor_tickers(ax) for ax in axs]
+        plt.subplots_adjust(**self.fig_params)
+
+        return ax0, ax1
+
+    def plot_divcontours(self, nlevels=10, levels=None, percentage=5.0):
+        """Plots the alignment after the offsets by dividing the input reference
+        image and the aligned one, and showing the contours.
+        Offsets should show up as negative/positive residuals systematically on
+        a given side of the resolved sources, or shifts in the contours.
+
+        Returns
+        -------
+        ax0 : matplotlib.pyplot ax
+            Matplotlib axis object for the division
+        ax1 : matplotlib.pyplot ax
+            Matplotlib axis object for the contours
+        """
+
+
+        fig, axs = initialise_fig_ax(
+            fig_name='divcontours',
+            fig_size=self.fig_size,
+            header=self.header,
+            grid=[1, 2]
+        )
+
+        ax0 = make_division(self.aligned, self.reference, ax=axs[0], 
+                            title=titles['after']['division'],
+                            percentage=percentage)
+        ax1 = make_contours(self.aligned, self.reference, ax=axs[1], 
+                            title=titles['after']['contours'],
+                            nlevels=nlevels, levels=levels)
+
         plt.subplots_adjust(**self.fig_params)
 
         return ax0, ax1
@@ -828,7 +1007,3 @@ def plot_vectors(v, u, y, x, ax=None):
 
     _ = ax.quiverkey(q, 0.873, 0.02, 1, r'=1 pixel', labelpos='E',
                      coordinates='figure', fontproperties={'size': 'medium'})
-
-
-if __name__ == "__main__":
-    pass

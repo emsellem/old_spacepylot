@@ -69,7 +69,7 @@ class VerbosePrints:
         yx_offset : 2-array
             The y and x offset applied to the prealign image.
             Positive values shift the prealign in the negative direction i.e
-            A coordinate of 3,3, with an offser of 1,1 will be shifted to 2,2.
+            A coordinate of 3,3, with an offset of 1,1 will be shifted to 2,2.
 
         Returns
         -------
@@ -77,7 +77,7 @@ class VerbosePrints:
 
         """
         if self.verbose and np.sum(yx_offset) != 0:
-            print('\nAdditonal offset of:\ny=%.4f, x=%4f pixels has been applied.'
+            print('\nAdditional offset of:\ny=%.4f, x=%4f pixels has been applied.'
                   ' All manually given offsets recorded in'
                   ' `self.manually_applied_offsets`' % tuple(yx_offset))
 
@@ -99,7 +99,7 @@ class VerbosePrints:
         """
 
         if self.verbose and rotation_angle != 0:
-            print('\nAdditional rotation of: theta=%4f degrees'
+            print('\nAdditional rotation of: theta=%4f degrees '
                   'has been applied. All manually given offsets recorded in'
                   ' `self.manually_applied_offsets`' % rotation_angle)
 
