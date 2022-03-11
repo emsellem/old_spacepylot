@@ -19,6 +19,7 @@ import copy as cp
 # Utilities from skimage
 from skimage import transform
 from skimage.transform import rotate
+from skimage.measure import ransac
 
 # Astropy
 from astropy.io import fits
@@ -91,6 +92,161 @@ def create_euclid_homography_matrix(rotation, translation, rotation_first=True):
     )
     return homography
 
+def homography_on_grid_points(original_xy, transformed_xy,
+                              method=transform.EuclideanTransform,
+                              reverse_homography=False,
+                              **kwargs):
+    """
+    Finds the offset between two images by estimating the matrix transform needed
+    to reproduce the vector changes between a set of xy coordinates.
+
+    This can align an image given a minimum of 4 xy, grid points from the reference
+    image and their location in the prealign image.
+
+    Default homography is the skimage.transform.EuclideanTransform. This forces
+    the solution to output only a rotation and a translation.
+    Other homography matrices can be used to find image shear, and scale changed
+    between th reference and prealign image.
+
+    Homography works because the translation and rotation (and scale etc.) matrix
+    can be combined into one operation. This matrix is called the homography
+    matrix. We can then write out a set of equations
+    describing the new yx, grid points as a function of the rotation and translation.
+    By writing these equations for the new x and y for each grid point
+    up as a matrix, we can just use singular value decomposition (SVD) to find the
+    coefficients (ie the translation and rotation) and out.
+    To improve this, we typically use least squares, with additional constraints
+    that we now to help improve the output homography matrix.
+
+    Most off the shell homography routines apply the rotation matrix first
+    then apply the translation matrix. To reverse this ordering, set
+    `self.reverse_homography` in the method `homography_on_grid_points`
+    to True
+
+    This function performs a fit to estimate the homography matrix that 
+    represents the grid transformation. Uses ransac 
+    to robustly eliminate vector outliers that
+    something such as optical flow, or other feature extracting methods
+    might output. The parameters are not currently changeable by the user
+    since not entirely sure what are the best parameters to use and so
+    are using values given in skimage tutorials.
+    for Euclidean transformations (i.e., pure rotations and translations)
+
+    Parameters
+    ----------
+    original_xy : nx2 array
+        nx2 array of the xy coordinates of the reference grid.
+    transformed_xy :  nx2 array
+        nx2 array of the xy coordinates of a feature that has been transformed
+        by a rotation and translation (coordinates of object in prealign grid)
+    method : function, optional
+        method is the what function is used to find the homography.
+        The default is transform.EuclideanTransform.
+    reverse_homography : bool, optional
+        Homography matrix outputs the solution representing a rotation followed
+        by a translation. If you want the solution to translate, then rotate
+        set this to True. The default is False.
+    ransac_test_values: bool
+        Boolean to use the test values for ransac. If False,
+        it will revert to code defined defaults values set up in the
+        default_kw dictionary. Default to True.
+
+    Returns
+    -------
+    shifts : 2-array
+        The recovered shifts, in pixels.
+    rotation : float
+        The recovered rotation, in degrees.
+    homography_matrix : 3x3 matrix
+        The Matrix that has been "performed" that resulted in the offset
+        between the prealign and the reference. The inverse therefore
+        describes the parameters needed to convert the prealign image
+        to the reference grid.
+
+    """
+    # Get keywords from kwargs
+    # If test value is True then keeping this empty to use default from ransac
+    # and speed up things
+    kwargs_ransac = {'min_samples': 3, 'residual_threshold': 0.5,
+                  'max_trials': 1000}
+
+    # Overwriting the keywords in case those are provided
+    for key in kwargs:
+        kwargs_ransac[key] = kwargs.pop(key)
+
+    # Ransac call
+    model_robust, inliers = ransac((original_xy, transformed_xy), method,
+                                   **kwargs_ransac)
+
+    if reverse_homography:
+        shifts = correct_homography_order(model_robust.params)
+    else:
+        shifts = np.array([model_robust.params[1, -1],
+                           model_robust.params[0, -1]])
+
+    # If you want the matrix to represent translation then rotation, set this
+    # to True
+    homography_matrix = model_robust.params
+    shifts = get_shifts_from_homography_matrix(homography_matrix,
+                                              reverse_homography, True)
+    # rotation = np.rad2deg(np.arcsin(model_robust.rotation))
+    rotation = get_rotation_from_homography_matrix(homography_matrix)
+
+    return shifts, rotation, homography_matrix
+
+
+def get_shifts_from_homography_matrix(homography_matrix, 
+                                     reverse_homography=False,
+                                     reverse_shift=False):
+    """Extracting the shift from an homography matrix
+
+    Parameters
+    ----------
+    homography_matrix: 3x3 matrix
+        Homography matrix
+    reverse_homography: bool
+        If True we need to use correct_homography_order to get
+        the shifts. Default to False
+    reverse_shifts: bool
+        If True we multiply shifts by -1
+        the shifts. Default to False
+
+    Returns
+    -------
+    shifts: [float, float]
+     
+    """
+    if homography_matrix is None:
+        return [0., 0.]
+
+    if reverse_homography:
+        shifts = correct_homography_order(homography_matrix)
+    else:
+        shifts = np.array([homography_matrix[1, -1], homography_matrix[0, -1]])
+
+    if reverse_shift:
+        shifts *= -1
+
+    return shifts
+
+def get_rotation_from_homography_matrix(homography_matrix):
+    """Extracting the rotation from an homography matrix
+
+    Parameters
+    ----------
+    homography_matrix: 3x3 matrix
+        Homography matrix
+
+    Returns
+    -------
+    rotation: float [in degrees]
+     
+    """
+    if homography_matrix is None:
+        return 0.
+    else:
+        return np.rad2deg(np.arctan2(homography_matrix[1, 0], 
+                          homography_matrix[1, 1]))
 
 def correct_homography_order(homography_matrix):
     """

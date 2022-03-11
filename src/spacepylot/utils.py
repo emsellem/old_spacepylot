@@ -10,8 +10,13 @@ __license__   = "MIT License"
 __contact__ = "<liz@email"
 
 import numpy as np
+import copy as cp
 
+from skimage import exposure
+
+# Internal package calls
 from .params import pcc_params
+from . import alignment_utilities as au
 
 
 class VerbosePrints:
@@ -153,4 +158,101 @@ class VerbosePrints:
             if added_rotation != 0:
                 tot_rot = rotation + added_rotation
                 print('Total offset of %.4f degrees found' % tot_rot)
+
+
+def _remove_nonvalid_numbers(image):
+    """
+    Removes non valid numbers from the array and replaces them with zeros
+
+    Parameters
+    ----------
+    image : 2darray
+        Image that will have its non valid values replaced with zeros
+
+    Returns
+    -------
+    image_valid : 2darray
+        Image without any NaNs or infs
+
+    """
+    return cp.deepcopy(np.nan_to_num(image))
+
+
+def _remove_image_border(image, border):
+    """
+    Shrinks the image by removing the given border value long each edge
+    of the image
+
+    Parameters
+    ----------
+    image : 2darray
+        Image that will have its borders removed
+    border : int
+        Number of pixels to remove from each edge.
+
+
+    Returns
+    -------
+    image_border_removed : 2darray
+        Image with boundary pixels removed Returned in a
+        nd-2*border, nd-2*border array.
+
+    """
+    # data_shape = min(np.shape(image))
+    # image = cp.deepcopy(image[:data_shape, :data_shape])
+    image_border_removed = image[border:-border, border:-border]
+
+    return image_border_removed
+
+
+def filter_image_for_analysis(image, histogram_equalisation=False,
+                              remove_boundary_pixels=25, convolve=None,
+                              hpf=None, hpf_kwargs={}):
+    """
+    The function that controls how the prealign and reference image are
+    filtered before running the alignment
+
+    Parameters
+    ----------
+    image : 2d array
+        Image to apply the filters to.
+    histogram_equalisation : Bool, optional
+        If true, scales the intensity values according to a histogram
+        equalisation. This tends to help computer vision find features
+        as it maximises the contrast. The default is False.
+    remove_boundary_pixels : int, optional
+        Removes pixels around the image if there are bad pixels at the
+        detector edge. The default is 25.
+    convolve : int or None, optional
+        If a number, it will convolve the image. The number refers to
+        the sigma of the folding Gaussian to convolve by in units of pixels
+        (I think). The default is None
+    hpf : function, optional
+        The high pass filter function to use to filter out high frequencies.
+        Higher frequencies can reduce the performance of alignment
+        routines. The default is None.
+    hpf_kwargs : dict, optional
+        The dictionary arguments needed for `hpf`. The default is {}.
+
+    Returns
+    -------
+    image : 2d array
+        The filtered image.
+
+    """
+
+    image = _remove_image_border(image, remove_boundary_pixels)
+    image = _remove_nonvalid_numbers(image)
+    if convolve is not None:
+        image = au.convolve_image(image, convolve)
+
+    # This helps to match up the intensities
+    if histogram_equalisation:
+        image = exposure.equalize_hist(image)
+
+    # Remove some frequencies to make alignment more robust vs noise
+    if hpf is not None:
+        image = hpf(image, **hpf_kwargs)
+
+    return image
 

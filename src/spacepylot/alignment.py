@@ -1,124 +1,31 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Nov 11 20:44:01 2021
+Updated 2021-2022 - EE
 
 @author: Liz_J
 """
 __author__ = "Elizabeth Watkins"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
-__contact__ = "<liz@email"
+__license__ = "MIT License"
+__contact__ = "<liz@email>"
 
+
+# Importing modules
 import numpy as np
 
-import copy as cp
-
-from skimage.registration import optical_flow_tvl1
-from skimage import exposure
+# Skimage
+from skimage.registration import phase_cross_correlation, optical_flow_tvl1
 from skimage import transform
 from skimage.measure import ransac
 
+# Internal calls
 from . import alignment_utilities as au
-from .alignment_utilities import correct_homography_order
-from .utils import VerbosePrints
+from .alignment_utilities import (correct_homography_order, 
+                                  get_shifts_from_homography_matrix,
+                                  get_rotation_from_homography_matrix)
+from .utils import VerbosePrints, filter_image_for_analysis
 from .params import pcc_params
-
-
-def _remove_nonvalid_numbers(image):
-    """
-    Removes non valid numbers from the array and replaces them with zeros
-
-    Parameters
-    ----------
-    image : 2darray
-        Image that will have its non valid values replaced with zeros
-
-    Returns
-    -------
-    image_valid : 2darray
-        Image without any NaNs or infs
-
-    """
-    return cp.deepcopy(np.nan_to_num(image))
-
-
-def _remove_image_border(image, border):
-    """
-    Shrinks the image by removing the given border value long each edge
-    of the image
-
-    Parameters
-    ----------
-    image : 2darray
-        Image that will have its borders removed
-    border : int
-        Number of pixels to remove from each edge.
-
-
-    Returns
-    -------
-    image_border_removed : 2darray
-        Image with boundary pixels removed Returned in a
-        nd-2*border, nd-2*border array.
-
-    """
-    # data_shape = min(np.shape(image))
-    # image = cp.deepcopy(image[:data_shape, :data_shape])
-    image_border_removed = image[border:-border, border:-border]
-
-    return image_border_removed
-
-
-def filter_image_for_analysis(image, histogram_equalisation=False,
-                              remove_boundary_pixels=25, convolve=None,
-                              hpf=None, hpf_kwargs={}):
-    """
-    The function that controls how the prealign and reference image are
-    filtered before running the alignment
-
-    Parameters
-    ----------
-    image : 2d array
-        Image to apply the filters to.
-    histogram_equalisation : Bool, optional
-        If true, scales the intensity values according to a histogram
-        equalisation. This tends to help computer vision find features
-        as it maximises the contrast. The default is False.
-    remove_boundary_pixels : int, optional
-        Removes pixels around the image if there are bad pixels at the
-        detector edge. The default is 25.
-    convolve : int or None, optional
-        If a number, it will convolve the image. The number refers to
-        the sigma of the folding Gaussian to convolve by in units of pixels
-        (I think). The default is None
-    hpf : function, optional
-        The high pass filter function to use to filter out high frequencies.
-        Higher frequencies can reduce the performance of alignment
-        routines. The default is None.
-    hpf_kwargs : dict, optional
-        The dictionary arguments needed for `hpf`. The default is {}.
-
-    Returns
-    -------
-    image : 2d array
-        The filtered image.
-
-    """
-
-    image = _remove_image_border(image, remove_boundary_pixels)
-    image = _remove_nonvalid_numbers(image)
-    if convolve is not None:
-        image = au.convolve_image(image, convolve)
-
-    # This helps to match up the intensities
-    if histogram_equalisation:
-        image = exposure.equalize_hist(image)
-
-    # Remove some frequencies to make alignment more robust vs noise
-    if hpf is not None:
-        image = hpf(image, **hpf_kwargs)
-
-    return image
 
 
 class AlignmentBase(object):
@@ -136,7 +43,7 @@ class AlignmentBase(object):
     def __init__(self, prealign, reference, convolve_prealign=None,
                  convolve_reference=None, guess_translation=[0, 0],
                  guess_rotation=0, verbose=True, header=None,
-                 filter_params={}):
+                 filter_params=None):
         """
         Runs the base alignment prep comment to all child alignment classes.
         It will perform the initial filters needed to help with the alignment
@@ -199,17 +106,15 @@ class AlignmentBase(object):
         self.convolve_prealign = convolve_prealign
         self.convolve_reference = convolve_reference
 
-        if not filter_params:
+        if filter_params is None:
             self.filter_params = pcc_params
             self.print.default_filter_params()
         else:
             self.filter_params = filter_params
 
-        self.prealign_filter = filter_image_for_analysis(
-            image=self.prealign,
-            convolve=self.convolve_prealign,
-            **self.filter_params
-        )
+        self.prealign_filter = filter_image_for_analysis(image=self.prealign,
+                                                         convolve=self.convolve_prealign,
+                                                         **self.filter_params)
 
         self.reference_filter = filter_image_for_analysis(image=self.reference,
                                                           convolve=self.convolve_reference,
@@ -227,34 +132,35 @@ class AlignmentBase(object):
         #
         self.matrix_transform = np.identity(3)
 
-        ## OLD - DEPRECATED - if done like this, doing the 
-        ##    transformation twice: once now, and once during
-        ##    the transformation (translate_prealign etc).
-        ## Hence = TO BE REMOVED if CONFIRMED
-        ## self.matrix_transform = np.linalg.inv(
-        ##     au.create_euclid_homography_matrix(
-        ##         guess_rotation,
-        ##         -np.array(guess_translation)
-        ##     )
-        ## )
-
         # Applying a guess/known translation and or rotation
-        try:
-            self.translate_prealign(guess_translation)
 
-        except ValueError:
-            # ValueError: Big-endian buffer not supported on little-endian compiler
-            self.prealign = self.prealign.byteswap().newbyteorder()
-            self.prealign_filter = self.prealign_filter.byteswap().newbyteorder()
-            self.translate_prealign(guess_translation)
+        # First the rotation
+        if guess_rotation != 0:
+            try:
+                self.rotate_prealign(guess_rotation)
 
-        self.rotate_prealign(guess_rotation)
+            except ValueError:
+                # ValueError: Big-endian buffer not supported on little-endian compiler
+                self.prealign = self.prealign.byteswap().newbyteorder()
+                self.prealign_filter = self.prealign_filter.byteswap().newbyteorder()
+                self.rotate_prealign(guess_rotation)
+
+        # Then the translation
+        if sum(guess_translation) != 0:
+            try:
+                self.translate_prealign(guess_translation)
+
+            except ValueError:
+                # ValueError: Big-endian buffer not supported on little-endian compiler
+                self.prealign = self.prealign.byteswap().newbyteorder()
+                self.prealign_filter = self.prealign_filter.byteswap().newbyteorder()
+                self.translate_prealign(guess_translation)
 
     @classmethod
     def from_fits(cls, filename_prealign, filename_reference, hdu_index_prealign=0,
                   hdu_index_reference=0, convolve_prealign=None, convolve_reference=None,
                   guess_translation=[0, 0], guess_rotation=0, verbose=True,
-                  filter_params={}):
+                  **filter_params):
         """
         Initialises the class straight from the filepaths
 
@@ -279,16 +185,16 @@ class AlignmentBase(object):
         convolve_reference : int or None, optional
             If a number, it will convolve the reference image. The number refers to
             the sigma of the folding Gaussian to convolve by in units of pixels
-git remote set-url origin            (I think). The default is None.
+            The default is None.
         guess_translation : 2-array, optional
             A starting translation you want to apply before running
-            the alignment. The default is [0,0]. Positive values translate
-            the image in the opposite direction. A value of [-3,-2] will translate
+            the alignment. Positive values translate the image in the opposite
+            direction. A value of [-3,-2] will translate the image upwards by
             the image upwards by three pixels and to the right by 2 pixels.
         guess_rotation : float, optional
             A starting rotation you want to apply before running. Units are in
             degrees, and a positive value rotates counter-clockwise.
-            the alignment. The default is [0,0].
+            The default is 0.
         verbose : bool, optional
             Tells the class whether to print out information for the user.
             The default is True.
@@ -310,10 +216,41 @@ git remote set-url origin            (I think). The default is None.
                    convolve_reference, guess_translation,
                    guess_rotation, verbose, header, filter_params)
 
+    def _update_transformation_matrix(self, new_rotation=0, new_translation=[0, 0]):
+        """
+        Updates the transformation matrix to the new solution found
+
+        Parameters
+        ----------
+        new_rotation : int, optional
+            The new rotation. Units are in degrees, and a positive value rotates
+            counter-clockwise. The default is 0.
+        new_translation : 2-array, optional
+            The new translation.  Positive values translate the image in the
+            opposite direction. A value of [-3,-2] will translate the image
+            upwards by three pixels and to the right by 2 pixels.
+            The default is [0,0].
+
+        Returns
+        -------
+        None
+
+        """
+        # new_matrix = np. linalg.inv(
+        #     au.create_euclid_homography_matrix(new_rotation, -np.array(new_translation)
+        #     )
+        # )
+        new_matrix = au.create_euclid_homography_matrix(
+            new_rotation,
+            -np.array(new_translation),
+            rotation_first=True)
+
+        self.matrix_transform = new_matrix @ self.matrix_transform
+
     def translate_prealign(self, yx_offset):
         """
         Translates the filtered prealign image and updates the homography matrix,
-        `self.matrix_transform` needed to align the prealign to the reference
+        `self.matrix_transform` needed to align the prealign to the reference.
 
         Parameters
         ----------
@@ -332,17 +269,18 @@ git remote set-url origin            (I think). The default is None.
 
         # Inverse matrix as this is the matrix needed to transform
         # the prealign image to the reference image co-ordinates
-        matrix_translation = np.linalg.inv(
-            au.create_euclid_homography_matrix(0, -np.array(yx_offset))
-        )
-        self.matrix_transform = matrix_translation @ self.matrix_transform
+        self._update_transformation_matrix(0, yx_offset)
 
         self.print.applied_translation(yx_offset)
 
     def rotate_prealign(self, rotation_angle):
         """
         Rotates the filtered prealign image and updates the homography matrix,
-        `self.matrix_transform` needed to align the prealign to the reference
+        `self.matrix_transform` needed to align the prealign to the reference.
+        Everytime this is applied, the transformation matrix
+        `self.matrix_transform` and lists that keep track of the
+        exact order translations and rotations have been apllied (used for
+        bug checking) -- `self.manually_applied_offsets` -- are updated.
 
         Parameters
         ----------
@@ -361,12 +299,194 @@ git remote set-url origin            (I think). The default is None.
 
         # Inverse matrix as this is the matrix needed to transform
         # the prealign image to the reference image co-ordinates
-        matrix_rotation = np.linalg.inv(
-            au.create_euclid_homography_matrix(rotation_angle, [0, 0])
-        )
-        self.matrix_transform = matrix_rotation @ self.matrix_transform
+        self._update_transformation_matrix(rotation_angle, [0, 0])
 
         self.print.applied_rotation(rotation_angle)
+
+
+class AlignmentCrossCorrelate(AlignmentBase):
+    """
+    Finds the translational offset between the reference and prealign images
+    using phase cross correlation. Phase cross correlation works by converting
+    the images into fourier space. Here, translational offsets are represented
+    as a phase difference, where there is no signal when they are out of phase,
+    and a sharp peak when the image is in phase. This sharp peak is used
+    to work out the offset between two images.
+    """
+
+    def fft_phase_correlation(self, prealign, reference, resolution=1000, **kwargs):
+        """
+        Method for performing the cross correlation between two images.
+
+        Parameters
+        ----------
+        prealign : 2d array
+            Image to be aligned.
+        reference : 2d array
+            Reference image with the correct alignment.
+        resolution : int, optional
+            Determines how precise the algorthm will run. For example, 10 will
+            find a solution closest to the first decimal place, 100 the second
+            etc. The default is 1000.
+        **kwargs : skimage.registration.phase_cross_correlation properties, optional
+            kwargs are optional parameters for
+            skimage.registration.phase_cross_correlation
+
+        Returns
+        -------
+        self.shifts : 2-array
+            The offset needed to align the prealign image with the
+            reference image.  Positive values shift the prealign in the negative
+            direction i.e A coordinate of 3,3, with an offset of 1,1
+            will be shifted to 2,2. If the image have been prepared properly
+            the returned shifts encode rotational offsets and scale changes
+            between the two images.
+
+        """
+
+        upsample_factor = kwargs.pop('upsample_factor', resolution)
+
+        shifts, error,  phasediff = phase_cross_correlation(
+            reference_image=reference,
+            moving_image=prealign,
+            upsample_factor=upsample_factor, **kwargs
+            )
+        return shifts
+
+
+class AlignTranslationPCC(AlignmentCrossCorrelate):
+    """
+    Class used to find only the translational offset between a pair of
+    images using phase cross correlation.
+    """
+
+    def get_translation(self, split_image=1, over_shifted=20, resolution=1000,
+                        **kwargs):
+        """
+        Method to perform phase cross correlation to find translational offset
+        between two images of equal size. Artifacts can affect the performance
+        of this method, therefore to make this method more robust,
+        the images can be split into quarters (2) 9ths (3) etc, and
+        the method is run independently in each section. Any offset found
+        that has a truly bad solution (as defined by the `over_shifted`
+        parameter (units of pixels), are ignored. Final solution returns
+        the median solution of all valid sections.
+
+        Parameters
+        ----------
+        split_image : int, optional
+            The number of subsections used to find the offset solution.
+            1 uses the original image, 2 splits the image 2x2=4 times,
+            3  is 3x3=9 times etc. The default is 1.
+        over_shifted : float or int, optional
+            Defines the limit on what is considered a plausible offset
+            to find in either the x or y directions (in number of pixels).
+            Any offset in x or y that is larger than this value are ignored.
+            The default is 20.
+        resolution : int, optional
+            Determines how precise the algorithm will run. For example, 10 will
+            find a solution closest to the first decimal place, 100 the second
+            etc. The default is 1000.
+        **kwargs : skimage.registration.phase_cross_correlation properties, optional
+            kwargs are optional parameters for
+            skimage.registration.phase_cross_correlation
+
+        Returns
+        -------
+        self.shifts : 2-array
+            The recovered shifts, in pixels.
+
+        """
+
+        if self.verbose:
+            print('\nSplitting up image into %dx%d parts and returning median'
+                  ' offset found for all panels.' %(split_image, split_image))
+            print('A pixel shift > %.2f pixels in either the x or the y direction '
+                  'will be ignored from the final offset calculation.' % over_shifted)
+
+        self.all_shifts = []
+        for i in range(split_image):
+            for j in range(split_image):
+                split_prealign, split_reference = self._get_split_images(split_image, (i, j))
+                self.shifts = self.fft_phase_correlation(split_prealign, split_reference, resolution, **kwargs)
+
+                # Ignores pixels translations that are too large
+                if any(np.abs(self.shifts) > over_shifted):
+                    continue
+                else:
+                    self.all_shifts.append(self.shifts)
+
+        # Taking the median
+        self.shifts = np.median(self.all_shifts, axis=0)
+        # Update the matrix
+        self._update_transformation_matrix(0, self.shifts)
+
+        # Printing out the result
+        added_shifts = np.sum(self.manually_applied_offsets['translations'], axis=0)
+        self.print.get_translation(self.shifts, added_shifts)
+
+        # Now adding the final shifts
+        self.shifts += added_shifts
+
+        return self.shifts
+
+    def _split(self, size, num):
+        """
+        For a given length, and division position within an axis, works
+        out the start and end indices of that sub-section of the axis.
+        If an image has been subdivided 2 times (4 quadrants), so
+        the length of the quadrant sides are axis/2, `num`=0 is used
+        to get the start and end indices of that quadrant.
+
+        Parameters
+        ----------
+        size : int
+            Length of subaxis.
+        num : int
+            start location of subaxis.
+
+        Returns
+        -------
+        lower : int
+            Lower index position of a given length.
+        upper : int
+            Upper index position of a given length.
+
+        """
+        lower, upper = int(size) * np.array([num, num+1])
+        return lower, upper
+
+    def _get_split_images(self, split_image, nums):
+        """
+        Returns subsection of a given image split into smaller sections
+
+        Parameters
+        ----------
+        split_image : int
+            The number of subsections used to find the offset solution.
+            1 uses the original image, 2 splits the image 2x2=4 times,
+            3  is 3x3=9 times etc. The default is 1.
+        nums : 2-array of ints
+            the ith and jth subsection location.
+
+        Returns
+        -------
+        split_pre : 2darray
+            the ith, jth subsection of the prealigned image
+        split_ref : 2darray
+            the corresponding ith, jth subsection of the reference image.
+
+        """
+
+        split_size = np.array(np.shape(self.reference_filter)) / split_image
+
+        [lower_y, upper_y], [lower_x, upper_x] = [self._split(split_size[n], nums[n])
+                                                  for n in [0, 1]]
+
+        split_pre = self.prealign_filter[lower_y:upper_y, lower_x:upper_x]
+        split_ref = self.reference_filter[lower_y:upper_y, lower_x:upper_x]
+
+        return split_pre, split_ref
 
 
 class AlignHomography(object):
@@ -398,22 +518,35 @@ class AlignHomography(object):
 
     """
 
-    def __init__(self):
-        self.shifts = None
-        self.rotation = None
-        self.homography_matrix = None
+    def __init__(self, homography_matrix=None,
+                 reverse_homography=False, reverse_shifts=False):
+        """Initialisation of the Homography class
+        """
+        self.homography_matrix = homography_matrix
+        self.reverse_homography = reverse_homography
+        self.reverse_shifts = reverse_shifts
+
+    @property
+    def hm_shifts(self):
+        return get_shifts_from_homography_matrix(self.homography_matrix,
+                                                 self.reverse_homography,
+                                                 self.reverse_shifts)
+
+    @property
+    def hm_rotation(self):
+        return get_rotation_from_homography_matrix(self.homography_matrix)
 
     def homography_on_grid_points(self, original_xy, transformed_xy,
                                   method=transform.EuclideanTransform,
                                   reverse_homography=False,
-                                  ):
+                                  reverse_shifts=False,
+                                  **kwargs):
         """Performs a fit to estimate the homography matrix that represents the grid
         transformation. Uses ransac to robustly eliminate vector outliers that
         something such as optical flow, or other feature extracting methods
         might output. The parameters are not currently changeable by the user
         since not entirely sure what are the best parameters to use and so
         are using values given in skimage tutorials.
-        TODO: Make method work with other transforms. Currently only works
         for Euclidean transformations (i.e., pure rotations and translations)
 
         Parameters
@@ -430,13 +563,14 @@ class AlignHomography(object):
             Homography matrix outputs the solution representing a rotation followed
             by a translation. If you want the solution to translate, then rotate
             set this to True. The default is False.
+        ransac_test_values: bool
+            Boolean to use the test values for ransac. If False,
+            it will revert to code defined defaults values set up in the
+            default_kw dictionary. Default to True.
+
 
         Returns
         -------
-        self.shifts : 2-array
-            The recovered shifts, in pixels.
-        self.rotation : float
-            The recovered rotation, in degrees.
         self.homography_matrix : 3x3 matrix
             The Matrix that has been "performed" that resulted in the offset
             between the prealign and the reference. The inverse therefore
@@ -444,31 +578,22 @@ class AlignHomography(object):
             to the reference grid.
 
         """
+        self.reverse_homography = reverse_homography
+        self.reverse_shifts = reverse_shifts
 
-        # UNUSED LINES
-        # model = method()
-        # found = model.estimate(original_xy, transformed_xy)
+        # Get keywords from kwargs
+        # If test value is True then keeping this empty to use default from ransac
+        # and speed up things
+        kwargs_ransac = {'min_samples': 3, 'residual_threshold': 0.5,
+                      'max_trials': 1000}
+        # Overwriting the keywords in case those are provided
+        for key in kwargs:
+            kwargs_ransac[key] = kwargs.pop(key)
 
-        # Robust outlier removal. Since I don't know what changing these
-        # paramters does, I've kept them as fixed and unaccessible to
-        # user for now. The output solution changes per rsun using ransac
-        model_robust, inliers = ransac((original_xy, transformed_xy), method,
-                                       min_samples=3, residual_threshold=2, max_trials=100)
-
-        # If you want the matrix to represent translation then rotation, set this
-        # to True
-        if reverse_homography:
-            shifts = correct_homography_order(model_robust.params)
-        else:
-            shifts = np.array([model_robust.params[1, -1],
-                               model_robust.params[0, -1]])
-
-        self.homography_matrix = model_robust.params
-        self.rotation = np.rad2deg(np.arcsin(model_robust.rotation))
-        self.shifts = -1 * shifts
-
-        return self.shifts, self.rotation, self.homography_matrix
-
+        # Call to Ransac
+        self.model_robust, inliers = ransac((original_xy, transformed_xy), method,
+                                       **kwargs_ransac)
+        self.homography_matrix = self.model_robust.params
 
 class AlignOpticalFlow(AlignmentBase, AlignHomography):
     """Optical flow is a gradient based method that find small changes between
@@ -488,9 +613,16 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 #        self.shifts = None
 #        self.rotation = None
 
-    def optical_flow(self):
+    def optical_flow(self, opf_test_values=True, **kwargs):
         """
         Performs the optical flow.
+
+        Parameters
+        ----------
+        opf_test_values: bool
+            Boolean to use the test values for the optical_flow. If False,
+            it will revert to code defined defaults values set up in the
+            default_kw dictionary. Default to True.
 
         Returns
         -------
@@ -502,8 +634,24 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             and the reference image.
 
         """
+        # Get keywords from kwargs
+        # If test value is True then keeping this empty to use default from ransac
+        # and speed up things
+        default_kw = {'attachment': 8, 'tightness': 0.12, 'num_warp': 30,
+                      'num_iter': 250, 'tol': 0.0001, 'prefilter': False}
 
-        v, u = optical_flow_tvl1(self.reference_filter, self.prealign_filter)
+        if not opf_test_values:
+            kwargs_of = default_kw
+
+            # Overwriting the keywords in case those are provided
+            for key in kwargs:
+                kwargs_of[key] = kwargs.pop(key)
+
+        else:
+            kwargs_of = {}
+
+        v, u = optical_flow_tvl1(self.reference_filter, self.prealign_filter,
+                                 **kwargs_of)
 
         return v, u
 
@@ -539,9 +687,28 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
         return xy_stacked, xy_stacked_pre
 
-    def get_translation_rotation_single(self, num_per_dimension=50,
-                                        homography_method=transform.EuclideanTransform,
-                                        reverse_homography=False):
+    @property
+    def shifts(self):
+        return get_shifts_from_homography_matrix(self.matrix_transform, 
+                                                 self.reverse_homography,
+                                                 self.reverse_shifts)
+
+    @property
+    def rotation(self):
+        return get_rotation_from_homography_matrix(self.matrix_transform)
+
+    @property
+    def total_manual_rotation(self):
+        return np.sum(self.manually_applied_offsets['rotations'])
+
+    @property
+    def total_manual_translations(self):
+        return np.sum(self.manually_applied_offsets['translations'], axis=0)
+
+    def get_translation_rotation(self, num_per_dimension=50,
+                                 homography_method=transform.EuclideanTransform,
+                                 reverse_homography=False, 
+                                 reverse_shifts=True, **kwargs):
         """Works out the translation and rotation using homography once
 
         Parameters
@@ -558,6 +725,11 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         reverse_homography : bool, optional
             If the order that a user will use to  correct the alignment is NOT
             rotation, then translation, set this to True. The default is False.
+        reverse_shifts : bool
+            When True, the shifts will be multiplied by a -1 sign. Default is True.
+        **kwargs: additional arguments
+            Those arguments will be passed on to ransac in the homography
+            calculation.
 
         Returns
         -------
@@ -576,39 +748,34 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         reference_grid_xy, prealign_grid_xy = self._prep_arrays(num_per_dimension)
 
         # Using homography
-        self.shifts, self.rotation, self.homography_matrix = self.homography_on_grid_points(
-            original_xy=reference_grid_xy,
-            transformed_xy=prealign_grid_xy,
-            # must be a method that outputs the 3x3 homography matrix
-            method=homography_method,
-            reverse_homography=reverse_homography
-        )
-        added_rotations = np.sum(self.manually_applied_offsets['rotations'])
-        added_translations = np.sum(self.manually_applied_offsets['translations'],
-                                    axis=0)
+        # Note: method must be a method that outputs the 3x3 homography matrix
+        self.homography_on_grid_points(original_xy=reference_grid_xy,
+                                       transformed_xy=prealign_grid_xy,
+                                       method=homography_method,
+                                       reverse_homography=reverse_homography,
+                                       reverse_shifts=reverse_shifts,
+                                       **kwargs)
 
-        self.print.get_rotation(self.rotation, added_rotations)
-        self.print.get_translation(self.shifts, added_translations)
+        #updating the prealign image, this also updates `self.matrix_transform`
+        self.rotate_prealign(self.hm_rotation)
+        self.translate_prealign(self.hm_shifts)
 
-        self.shifts = self.shifts + added_translations
-        self.rotation += added_rotations
-
-        return self.shifts, self.rotation, self.homography_matrix
-
-    def get_translation_rotation(self, niter=20, num_per_dimension=50,
+    def get_iterate_translation_rotation(self, niter=1, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
-                                 reverse_homography=False):
+                                 reverse_homography=False, 
+                                 reverse_shifts=True, **kwargs):
         """If the solution is offset by more than ~5 pixels, optical flow struggles
         to match up the pixels. This method gets around this by applying optical
         flow multiple times to that the shifts and rotations converge to a solution.
-        TODO: Make this stop after a the change between solutions is smaller that
+        TODO = Make this stop after a change between solutions is smaller that
         a user defined value (i.e >1% for example)
 
         Parameters
         ----------
         niter : int, optional
             The number of times to perform optical flow to find the shifts and
-            rotation. The default is 20.
+            rotation. The default is 1, as normally we should use iterations
+            within optical flow itself, and not from this stage.
         num_per_dimension : int, optional
              For each axis, this sets the number of grid points to be calculated.
              The default is 50.
@@ -621,7 +788,11 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         reverse_homography : bool, optional
             If the order that a user will use to  correct the alignment is NOT
             rotation, then translation, set this to True. The default is False.
-
+        reverse_shifts : bool
+            When True, the shifts will be multiplied by a -1 sign. Default is True.
+        **kwargs: additional arguments
+            Those arguments will be passed on to ransac in the homography
+            calculation.
 
         Returns
         -------
@@ -633,19 +804,9 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         """
         for i in range(niter):
             # This finds
-            __, __, homography_matrix = self.get_translation_rotation_single(num_per_dimension,
-                                                                             homography_method, reverse_homography)
-            shifts = -1 * np.array([homography_matrix[1, -1], homography_matrix[0, -1]])
-            rotations = np.rad2deg(np.arcsin(homography_matrix[1, 0]))
-
-            # Updating the prealign image, this also updates `self.matrix_transform`
-            self.translate_prealign(shifts)
-            self.rotate_prealign(rotations)
-
-        self.shifts = [self.matrix_transform[1, -1], self.matrix_transform[0, -1]]
-        self.rotation = np.rad2deg(np.arcsin(-self.matrix_transform[1, 0]))
-
-        return self.shifts, self.rotation
+            self.get_translation_rotation(num_per_dimension, homography_method,
+                                          reverse_homography, reverse_shifts,
+                                          **kwargs)
 
 
 class AlignmentCrossCorrelate(AlignmentBase):
@@ -656,7 +817,6 @@ class AlignmentCrossCorrelate(AlignmentBase):
     and a sharp peak when the image is in phase. This sharp peak is used
     to work out the offset between two images.
     """
-
 
     def fft_phase_correlation(self, prealign, reference, resolution=1000, **kwargs):
         """
@@ -685,121 +845,9 @@ class AlignmentCrossCorrelate(AlignmentBase):
             between the two images.
         """
         upsample_factor = kwargs.pop('upsample_factor', resolution)
-        self.shifts, error,  phasediff = phase_cross_correlation(
+        shifts, error, phasediff = phase_cross_correlation(
             reference_image=reference,
             moving_image=prealign,
             upsample_factor=upsample_factor, **kwargs
             )
-        return self.shifts
-
-
-class AlignTranslationPCC(AlignmentCrossCorrelate):
-    """Class used to find only the translational offset between a pair of
-    images using phase cross correlation.
-    """
-
-    def get_translation(self, split_image=1, over_shifted=20, resolution=1000, **kwargs):
-        """Method to perform phase cross correlation to find translational offset
-        between two images of equal size. Artifacts can affect the performance
-        of this method, therefore to make this method more robust,
-        the images can be split into quarters (2) 9ths (3) etc, and
-        the method is run independently in each section. Any offset found
-        that has an really bad solution (as defined by the `over_shifted`
-        parameter (units of pixels), are ignored. Final solution returns
-        the median solution of all valid sections.
-
-        Parameters
-        ----------
-        split_image : int, optional
-            The number of subsections used to find the offset solution.
-            1 uses the origonal image, 2 splits the image 2x2=4 times,
-            3  is 3x3=9 times etc. The default is 1.
-        over_shifted : float or int, optional
-            Defines the limit on what is considered a plausable offset
-            to find in either the x or y directions (in number of pixels).
-            Any offset in x or y that is larger than this value are ignored.
-            The default is 20.
-        resolution : int, optional
-            Determines how precise the algorthm will run. For example, 10 will
-            find a solution closest to the first decimal place, 100 the second
-            etc. The default is 1000.
-        **kwargs : skimage.registration.phase_cross_correlation properties, optional
-            kwargs are optional parameters for
-            skimage.registration.phase_cross_correlation
-        Returns
-        -------
-        self.shifts : 2-array
-            The recovered shifts, in pixels.
-        """
-
-        if self.verbose:
-            print('\nSpliting up image into %dx%d parts and returning median'\
-                  ' offset found for all panels.' %(split_image, split_image))
-            print('A pixel shift > %.2f pixels in either the x or the y direction '\
-                  'will be ignored from the final offset calculation.' % over_shifted)
-        self.all_shifts  = []
-
-        for i in range(split_image):
-            for j in range(split_image):
-                split_prealign, split_reference = self._get_split_images(split_image, (i, j))
-                self.shifts = self.fft_phase_correlation(split_prealign, split_reference, resolution, **kwargs)
-
-                #ignores pixels translations that are too large
-                if any(np.abs(self.shifts) > over_shifted):
-                    continue
-                else:
-                    self.all_shifts.append(self.shifts)
-
-        self.shifts = np.median(self.all_shifts, axis=0)
-        # self._update_transformation_matrix(0, self.shifts)
-        added_shifts = np.sum(self.manually_applied_offsets['translations'], axis=0)
-        self.print.get_translation(self.shifts, added_shifts)
-        self.shifts += added_shifts
-        return self.shifts
-
-    def _split(self, size, num):
-        """For a given length, and division position within an axis, works
-        out the start and end indices of that sub section of the axis.
-        If an image has been subdiveded 2 times (4 quadrants), so
-        the length of the quantrant sides are axis/2, `num`=0 is used
-        to get the start and end indices of that quantant.
-
-        Parameters
-        ----------
-        size : int
-            Length of subaxis.
-        num : int
-            start location of subaxis.
-        Returns
-        -------
-        lower : int
-            Lower index position of a given length.
-        upper : int
-            Upper index position of a given length.
-        """
-        lower, upper = int(size) * np.array([num, num+1])
-        return lower, upper
-
-    def _get_split_images(self, split_image, nums):
-        """Returns subsection of a given image split into smaller sections
-        Parameters
-        ----------
-        split_image : int
-            The number of subsections used to find the offset solution.
-            1 uses the origonal image, 2 splits the image 2x2=4 times,
-            3  is 3x3=9 times etc. The default is 1.
-        nums : 2-array of ints
-            the ith and jth subsection location.
-        Returns
-        -------
-        split_pre : 2darray
-            the ith, jth subsection of the prealigned image
-        split_ref : 2darray
-            the corresponding ith, jth subsection of the reference image.
-        """
-        split_size = np.array(np.shape(self.reference_filter)) / split_image
-        [lower_y, upper_y], [lower_x, upper_x] = [self._split(split_size[n], nums[n])
-                                                  for n in [0, 1]]
-        split_pre = self.prealign_filter[lower_y:upper_y, lower_x:upper_x]
-        split_ref = self.reference_filter[lower_y:upper_y, lower_x:upper_x]
-        return split_pre, split_ref
+        return shifts
