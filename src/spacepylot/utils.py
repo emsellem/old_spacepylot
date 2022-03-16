@@ -4,7 +4,7 @@ Created on Thu Nov 11 20:50:06 2021
 
 @author: Liz_J
 """
-__author__ = "Elizabeth Watkins"
+__author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
 __license__   = "MIT License"
 __contact__ = "<liz@email"
@@ -82,9 +82,8 @@ class VerbosePrints:
 
         """
         if self.verbose and np.sum(yx_offset) != 0:
-            print('\nAdditional offset of:\ny=%.4f, x=%4f pixels has been applied.'
-                  ' All manually given offsets recorded in'
-                  ' `self.manually_applied_offsets`' % tuple(yx_offset))
+            print(f"\nAdditional offset of:"
+                  f"\ny={yx_offset[0]:.4f}, x={yx_offset[1]:.4f} pixels has been applied.")
 
     def applied_rotation(self, rotation_angle):
         """
@@ -104,9 +103,9 @@ class VerbosePrints:
         """
 
         if self.verbose and rotation_angle != 0:
-            print('\nAdditional rotation of: theta=%4f degrees '
-                  'has been applied. All manually given offsets recorded in'
-                  ' `self.manually_applied_offsets`' % rotation_angle)
+            print('\nAdditional rotation of: \n'
+                 f'theta={rotation_angle:4f} degrees '
+                  'has been applied.')
 
     def get_translation(self, shifts, added_shifts=(0, 0)):
         """
@@ -157,7 +156,47 @@ class VerbosePrints:
             print('Rotation of %.4f degrees found' % rotation)
             if added_rotation != 0:
                 tot_rot = rotation + added_rotation
-                print('Total offset of %.4f degrees found' % tot_rot)
+                print('Total rotation of %.4f degrees found' % tot_rot)
+
+def _split(size, num):
+    """
+    For a given length, and division position within an axis, works
+    out the start and end indices of that sub-section of the axis.
+    If an image has been subdivided 2 times (4 quadrants), so
+    the length of the quadrant sides are axis/2, `num`=0 is used
+    to get the start and end indices of that quadrant.
+
+    Parameters
+    ----------
+    size : int
+        Length of subaxis.
+    num : int
+        start location of subaxis.
+
+    Returns
+    -------
+    lower : int
+        Lower index position of a given length.
+    upper : int
+        Upper index position of a given length.
+
+    """
+    lower, upper = int(size) * np.array([num, num+1])
+    return lower, upper
+
+
+def reject_outliers(data, m=3):
+    """Rejects outliers given by a factor of the standard deviation
+
+    Parameters
+    ----------
+    data: numpy array
+        Input 1D array to filter
+    m : float
+        Input factor which gives the number of standard deviations
+        beyond which points will be rejected.
+    """
+    return data[abs(data - np.median(data)) < m * np.std(data)]
 
 
 def _remove_nonvalid_numbers(image):

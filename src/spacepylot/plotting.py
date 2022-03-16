@@ -463,14 +463,18 @@ class AlignmentPlotting:
         self.rotation_fit = rotation_fit
 
         image_shape = prealign.shape
-        try:
-            translation_corrected = au.translate_image(self.prealign, self.shifts)
 
-        except ValueError:
-            self.prealign = self.prealign.byteswap().newbyteorder()
-            translation_corrected = au.translate_image(self.prealign, self.shifts)
+        if self.header != None:
+            self.aligned = au.transform_image_wcs(self.prealign, self.header,
+                                                  self.rotation, self.shifts)
+        else:
+            try:
+                rotation_corrected = au.rotate_image(self.prealign, self.rotation)
+            except ValueError:
+                self.prealign = self.prealign.byteswap().newbyteorder()
+                rotation_corrected = au.rotate_image(self.prealign, self.rotation)
 
-        self.aligned = au.rotate_image(translation_corrected, self.rotation)
+        self.aligned = au.translate_image(rotation_corrected, self.shifts)
 
         self.fig_size, self.fig_params = fix_tight_layout(*image_shape[::-1],
                                                           [1, 2], fig_height=7)
@@ -564,11 +568,13 @@ class AlignmentPlotting:
         data_prealign = align_object.prealign
         data_reference = align_object.reference
         try:
-            rotation = align_object.rotation
+            rotation = align_object.rotation_deg
         except AttributeError:
             pass
         try:
-            shifts = align_object.shifts
+            print("Plot Input trans: ", align_object.translation)
+            print("Signs ", align_object.matrix_transform.reverse_order, align_object.matrix_transform.reverse_trans)
+            shifts = align_object.translation
         except AttributeError:
             pass
         try:
@@ -620,7 +626,8 @@ class AlignmentPlotting:
         ax1 = plot_rgb(rgb_after,  ax=axs[1],
                        title=titles['after']['red-blue'] % (*self.shifts, self.rotation))
 
-        # [fT.minor_tickers(ax) for ax in axs]
+        fT.remove_overlapping_tickers_for_horizontal_subplots(1, *axs)
+        [fT.minor_tickers(ax) for ax in axs]
         plt.subplots_adjust(**self.fig_params)
 
         return ax0, ax1

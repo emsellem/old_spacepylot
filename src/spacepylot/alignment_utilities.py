@@ -4,7 +4,7 @@ Created on Thu Nov 11 20:50:06 2021
 
 @author: Liz_J
 """
-__author__ = "Elizabeth Watkins"
+__author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
 __license__   = "MIT License"
 __contact__ = "<liz@email"
@@ -20,6 +20,9 @@ import copy as cp
 from skimage import transform
 from skimage.transform import rotate
 from skimage.measure import ransac
+
+# Reproject
+from reproject import reproject_interp
 
 # Astropy
 from astropy.io import fits
@@ -94,7 +97,8 @@ def create_euclid_homography_matrix(rotation, translation, rotation_first=True):
 
 def homography_on_grid_points(original_xy, transformed_xy,
                               method=transform.EuclideanTransform,
-                              reverse_homography=False,
+                              reverse_order=False,
+                              reverse_trans=True,
                               **kwargs):
     """
     Finds the offset between two images by estimating the matrix transform needed
@@ -120,7 +124,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
 
     Most off the shell homography routines apply the rotation matrix first
     then apply the translation matrix. To reverse this ordering, set
-    `self.reverse_homography` in the method `homography_on_grid_points`
+    `self.reverse_order` in the method `homography_on_grid_points`
     to True
 
     This function performs a fit to estimate the homography matrix that 
@@ -142,7 +146,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
     method : function, optional
         method is the what function is used to find the homography.
         The default is transform.EuclideanTransform.
-    reverse_homography : bool, optional
+    reverse_order : bool, optional
         Homography matrix outputs the solution representing a rotation followed
         by a translation. If you want the solution to translate, then rotate
         set this to True. The default is False.
@@ -178,17 +182,12 @@ def homography_on_grid_points(original_xy, transformed_xy,
     model_robust, inliers = ransac((original_xy, transformed_xy), method,
                                    **kwargs_ransac)
 
-    if reverse_homography:
-        shifts = correct_homography_order(model_robust.params)
-    else:
-        shifts = np.array([model_robust.params[1, -1],
-                           model_robust.params[0, -1]])
-
     # If you want the matrix to represent translation then rotation, set this
     # to True
     homography_matrix = model_robust.params
     shifts = get_shifts_from_homography_matrix(homography_matrix,
-                                              reverse_homography, True)
+                                               reverse_order, 
+                                               reverse_trans)
     # rotation = np.rad2deg(np.arcsin(model_robust.rotation))
     rotation = get_rotation_from_homography_matrix(homography_matrix)
 
@@ -196,18 +195,18 @@ def homography_on_grid_points(original_xy, transformed_xy,
 
 
 def get_shifts_from_homography_matrix(homography_matrix, 
-                                     reverse_homography=False,
-                                     reverse_shift=False):
+                                      reverse_order=False,
+                                      reverse_trans=True):
     """Extracting the shift from an homography matrix
 
     Parameters
     ----------
     homography_matrix: 3x3 matrix
         Homography matrix
-    reverse_homography: bool
+    reverse_order: bool
         If True we need to use correct_homography_order to get
         the shifts. Default to False
-    reverse_shifts: bool
+    reverse_trans: bool
         If True we multiply shifts by -1
         the shifts. Default to False
 
@@ -219,13 +218,14 @@ def get_shifts_from_homography_matrix(homography_matrix,
     if homography_matrix is None:
         return [0., 0.]
 
-    if reverse_homography:
+    if reverse_order:
         shifts = correct_homography_order(homography_matrix)
     else:
-        shifts = np.array([homography_matrix[1, -1], homography_matrix[0, -1]])
+        shifts = homography_matrix[:2, -1][::-1]
 
-    if reverse_shift:
-        shifts *= -1
+#    if reverse_trans:
+#        shifts *= -1
+    shifts *= -1
 
     return shifts
 
@@ -245,8 +245,8 @@ def get_rotation_from_homography_matrix(homography_matrix):
     if homography_matrix is None:
         return 0.
     else:
-        return np.rad2deg(np.arctan2(homography_matrix[1, 0], 
-                          homography_matrix[1, 1]))
+        return np.arctan2(homography_matrix[1, 0], 
+                          homography_matrix[1, 1])
 
 def correct_homography_order(homography_matrix):
     """
@@ -332,6 +332,47 @@ def rotate_image(image, angle_degrees):
     return image_rotated
 
 
+def transform_image_wcs(image, header, rotation=0, yx_offset=[0,0]):
+    """Rotates and translate image using reproject keeping the 
+    image size the same
+
+    Parameters
+    ----------
+    image : 2d image
+        image to warp.
+    header: astropy.io.Header.header
+        Dictionary-like object containing the world coordinate reference.
+    rotation : float, optional
+        Rotation angle to apply to the image in degrees. The default is 0.
+    yx_offset : 2-array, optional
+        The yx coordinate to translate the image. The default is [0,0].
+
+    Returns
+    -------
+    transformed_image : 2d array
+        image that has been warped to new grid.
+    """
+    # Getting the WCS
+    input_wcs = wcs.WCS(naxis=2)
+    input_wcs.wcs.crpix = header['CRPIX1'], header['CRPIX2']
+
+    try: # TODO check if this is consistant if CD1_2 and  CD2_1 are given etc
+        input_wcs.wcs.cdelt = header['CD1_1'], header['CD2_2']
+    except KeyError:
+        input_wcs.wcs.cdelt = header['CDELT1'], header['CDELT2']
+
+    output_wcs = wcs.WCS(naxis=2)
+    output_wcs.wcs.crpix = input_wcs.wcs.crpix + yx_offset[::-1]
+    output_wcs.wcs.cdelt = input_wcs.wcs.cdelt
+    rot = -np.deg2rad(rotation)
+    output_wcs.wcs.pc = [[np.cos(rot), np.sin(rot)], [-np.sin(rot), np.cos(rot)]]
+
+    transformed_image, _ = reproject_interp((image, input_wcs),
+                                            output_wcs,
+                                            shape_out=[header['NAXIS2'],
+                                                       header['NAXIS1']])
+    return transformed_image
+
 def convolve_image(image, sigma):
     """
     Convolve the image with the sigma supplied. Sigma I think, related
@@ -351,8 +392,9 @@ def convolve_image(image, sigma):
         Convolved image.
 
     """
-    kernel = Gaussian2DKernel(x_stddev=sigma)
-    image = cp.deepcopy(convolve(image, kernel))
+    if sigma > 0:
+        kernel = Gaussian2DKernel(x_stddev=sigma)
+        image = cp.deepcopy(convolve(image, kernel))
 
     return image
 
@@ -471,16 +513,16 @@ def _umeyama_translation(reference_coords, prealign_coords):
             point patterns", Shinji Umeyama, PAMI 1991, :DOI:`10.1109/34.88573`
     .. [2] Code modified from skimage.transform._geometric
     """
-    dimimsion = reference_coords.shape[1]
+    dimension = reference_coords.shape[1]
 
     # Compute mean x and y coordinates for the reference and prealign.
     reference_coords_mean = np.nanmean(reference_coords, axis=0)
     prealign_coords_mean = np.nanmean(prealign_coords, axis=0)
-    homography_solution = np.identity(dimimsion + 1, dtype=np.double)
+    homography_solution = np.identity(dimension + 1, dtype=np.double)
 
     # [1] eq 41. : translation = prealign_coords_mean - scale * (rotation_matrix @ reference_coords_mean.T)
     #translation, without scale and rotation, has the following soltuion:
-    homography_solution[:dimimsion, dimimsion] = prealign_coords_mean - reference_coords_mean
+    homography_solution[:dimension, dimension] = prealign_coords_mean - reference_coords_mean
 
     return homography_solution
 
@@ -527,6 +569,7 @@ class TranslationTransform(transform.ProjectiveTransform):
     def __init__(self, matrix=None, translation=None,
                  *, dimensionality=2):
         params_given = translation is not None
+
         if params_given and matrix is not None:
             raise ValueError("You cannot specify the transformation matrix and"
                              " the implicit parameters at the same time.")
@@ -534,14 +577,20 @@ class TranslationTransform(transform.ProjectiveTransform):
             if matrix.shape[0] != matrix.shape[1]:
                 raise ValueError("Invalid shape of transformation matrix.")
             self.params = matrix
+
         elif params_given:
+
             if translation is None:
                 translation = (0,) * dimensionality
+
             if dimensionality == 2:
                 self.params = np.identity(3)
+
             elif dimensionality == 3:
                 self.params = np.eye(dimensionality + 1)
+
             self.params[0:dimensionality, dimensionality] = translation
+
         else:
             # default to an identity transform
             self.params = np.eye(dimensionality + 1)

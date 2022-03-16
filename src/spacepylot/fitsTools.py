@@ -4,7 +4,7 @@ Created on Wed Nov  4 15:43:22 2020
 
 @author: Liz_J
 """
-__author__ = "Elizabeth Watkins"
+__author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
 __license__   = "MIT License"
 __contact__ = "<liz@email"
@@ -341,7 +341,7 @@ def remove_y_ticker_labels_for_subplots(*axes_objects):
     """Removes overlapping tickers from y
     """
 
-    plt.setp([ax.get_yticklabels() for ax in axes_objects[:]], visible=False)
+    plt.setp([ax.get_yticklabels() for ax in axes_objects[1:]], visible=False)
 
 
 def remove_overlapping_tickers_for_horizontal_subplots(bin_adjust=0, *axes_objects):

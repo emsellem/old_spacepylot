@@ -4,7 +4,7 @@ Created on Thu Nov 11 20:44:01 2021
 
 @author: Liz_J
 """
-__author__ = "Elizabeth Watkins"
+__author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
 __license__   = "MIT License"
 __contact__ = "<liz@email"
