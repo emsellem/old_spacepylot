@@ -6,7 +6,7 @@ Created on Thu Nov 11 20:44:01 2021
 """
 __author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
+__license__ = "MIT License"
 __contact__ = "<liz@email"
 
 from skimage.filters import difference_of_gaussians

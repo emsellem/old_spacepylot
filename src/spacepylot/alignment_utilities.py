@@ -6,14 +6,13 @@ Created on Thu Nov 11 20:50:06 2021
 """
 __author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
+__license__ = "MIT License"
 __contact__ = "<liz@email"
 
 import numpy as np
 from scipy import ndimage as ndi
 
 # more standard modules
-import math
 import copy as cp
 
 # Utilities from skimage
@@ -27,6 +26,7 @@ from reproject import reproject_interp
 # Astropy
 from astropy.io import fits
 from astropy.convolution import convolve, Gaussian2DKernel
+from astropy import wcs
 
 
 def column_stack_2d(array_2d_first, array_2d_second):
@@ -95,6 +95,7 @@ def create_euclid_homography_matrix(rotation, translation, rotation_first=True):
     )
     return homography
 
+
 def homography_on_grid_points(original_xy, transformed_xy,
                               method=transform.EuclideanTransform,
                               reverse_order=False,
@@ -150,10 +151,9 @@ def homography_on_grid_points(original_xy, transformed_xy,
         Homography matrix outputs the solution representing a rotation followed
         by a translation. If you want the solution to translate, then rotate
         set this to True. The default is False.
-    ransac_test_values: bool
-        Boolean to use the test values for ransac. If False,
-        it will revert to code defined defaults values set up in the
-        default_kw dictionary. Default to True.
+    reverse_trans : bool
+        Will impose a sign change on the offsets extracted from the homography
+        matrix. Default to True.
 
     Returns
     -------
@@ -172,7 +172,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
     # If test value is True then keeping this empty to use default from ransac
     # and speed up things
     kwargs_ransac = {'min_samples': 3, 'residual_threshold': 0.5,
-                  'max_trials': 1000}
+                     'max_trials': 1000}
 
     # Overwriting the keywords in case those are provided
     for key in kwargs:
@@ -223,11 +223,11 @@ def get_shifts_from_homography_matrix(homography_matrix,
     else:
         shifts = homography_matrix[:2, -1][::-1]
 
-#    if reverse_trans:
-#        shifts *= -1
-    shifts *= -1
+    if reverse_trans:
+        shifts *= -1
 
     return shifts
+
 
 def get_rotation_from_homography_matrix(homography_matrix):
     """Extracting the rotation from an homography matrix
@@ -247,6 +247,7 @@ def get_rotation_from_homography_matrix(homography_matrix):
     else:
         return np.arctan2(homography_matrix[1, 0], 
                           homography_matrix[1, 1])
+
 
 def correct_homography_order(homography_matrix):
     """
@@ -332,7 +333,7 @@ def rotate_image(image, angle_degrees):
     return image_rotated
 
 
-def transform_image_wcs(image, header, rotation=0, yx_offset=[0,0]):
+def transform_image_wcs(image, header, rotation=0, yx_offset=None):
     """Rotates and translate image using reproject keeping the 
     image size the same
 
@@ -356,11 +357,13 @@ def transform_image_wcs(image, header, rotation=0, yx_offset=[0,0]):
     input_wcs = wcs.WCS(naxis=2)
     input_wcs.wcs.crpix = header['CRPIX1'], header['CRPIX2']
 
-    try: # TODO check if this is consistant if CD1_2 and  CD2_1 are given etc
+    try: # TODO check if this is consistent if CD1_2 and  CD2_1 are given etc
         input_wcs.wcs.cdelt = header['CD1_1'], header['CD2_2']
     except KeyError:
         input_wcs.wcs.cdelt = header['CDELT1'], header['CDELT2']
 
+    if yx_offset is None:
+        yx_offset = np.zeros(2)
     output_wcs = wcs.WCS(naxis=2)
     output_wcs.wcs.crpix = input_wcs.wcs.crpix + yx_offset[::-1]
     output_wcs.wcs.cdelt = input_wcs.wcs.cdelt
@@ -372,6 +375,7 @@ def transform_image_wcs(image, header, rotation=0, yx_offset=[0,0]):
                                             shape_out=[header['NAXIS2'],
                                                        header['NAXIS1']])
     return transformed_image
+
 
 def convolve_image(image, sigma):
     """
@@ -494,6 +498,7 @@ def open_fits(filepath, hdu_i=0):
         header = hdulist[hdu_i].header
     return data, header
 
+
 def _umeyama_translation(reference_coords, prealign_coords):
     """Estimates the similarity transformation for translational
     offsets only.
@@ -521,7 +526,7 @@ def _umeyama_translation(reference_coords, prealign_coords):
     homography_solution = np.identity(dimension + 1, dtype=np.double)
 
     # [1] eq 41. : translation = prealign_coords_mean - scale * (rotation_matrix @ reference_coords_mean.T)
-    #translation, without scale and rotation, has the following soltuion:
+    # translation, without scale and rotation, has the following solution:
     homography_solution[:dimension, dimension] = prealign_coords_mean - reference_coords_mean
 
     return homography_solution

@@ -1,4 +1,4 @@
-#) -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Created on Thu Nov 11 20:44:01 2021
 Updated 2021-2022 - EE
@@ -24,11 +24,11 @@ import copy as cp
 
 # Internal calls
 from . import alignment_utilities as au
-from .alignment_utilities import (correct_homography_order, 
-                                  get_shifts_from_homography_matrix,
+from .alignment_utilities import (get_shifts_from_homography_matrix,
                                   get_rotation_from_homography_matrix)
 from .utils import VerbosePrints, filter_image_for_analysis, _split
 from .params import pcc_params
+
 
 class HomoMatrix(object):
     """
@@ -49,9 +49,9 @@ class HomoMatrix(object):
         """Returns the translation shifts from the homography
         matrix
         """
-        return get_shifts_from_homography_matrix(self.homo_matrix, 
-                                           self.reverse_order,
-                                           self.reverse_trans)
+        return get_shifts_from_homography_matrix(self.homo_matrix,
+                                                 self.reverse_order,
+                                                 self.reverse_trans)
 
     @property
     def rotation_rad(self):
@@ -67,7 +67,7 @@ class HomoMatrix(object):
         """
         return np.rad2deg(self.rotation_rad)
 
-    def __matmul__(self, B):
+    def __matmul__(self, b):
         """Returns a new HomoMatrix using the multiplication
         with self as first operand (B being the second)
         Important note: we always copy the first HomoMatrix
@@ -75,22 +75,22 @@ class HomoMatrix(object):
 
         Parameters
         ----------
-        B : 3x3 array or HomoMatrix
+        b : 3x3 array or HomoMatrix
 
         Returns
         -------
         HomoMatrix with the self @ B multiplication
 
         """
-        newHM = cp.copy(self)
-        if isinstance(B, HomoMatrix):
-            newHM.homo_matrix = self.homo_matrix @ B.homo_matrix
+        newhm = cp.copy(self)
+        if isinstance(b, HomoMatrix):
+            newhm.homo_matrix = self.homo_matrix @ b.homo_matrix
         else:
-            newHM.homo_matrix = self.homo_matrix @ B
+            newhm.homo_matrix = self.homo_matrix @ b
 
-        return newHM
+        return newhm
 
-    def __rmatmul__(self, A):
+    def __rmatmul__(self, a):
         """Returns a new HomoMatrix using the multiplication
         with self as the second operand (A being the first)
         Important note: we always copy the first HomoMatrix
@@ -98,22 +98,22 @@ class HomoMatrix(object):
 
         Parameters
         ----------
-        A : 3x3 array or HomoMatrix
+        a : 3x3 array or HomoMatrix
 
         Returns
         -------
         HomoMatrix with the A @ self multiplication
         """
 
-        if isinstance(A, HomoMatrix):
-            newHM = cp.copy(A)
-            newHM.homo_matrix = A.homo_matrix @ self.homo_matrix 
+        if isinstance(a, HomoMatrix):
+            newhm = cp.copy(a)
+            newhm.homo_matrix = a.homo_matrix @ self.homo_matrix
         else:
-            newHM = cp.copy(self)
-            newHM.homo_matrix = A @ self.homo_matrix
-        return newHM
+            newhm = cp.copy(self)
+            newhm.homo_matrix = a @ self.homo_matrix
+        return newhm
 
-    def adot(self, A):
+    def adot(self, a):
         """Returns a new HomoMatrix using the multiplication
         with self as the second operand (A being the first)
         Important note: we always copy the first HomoMatrix
@@ -121,20 +121,20 @@ class HomoMatrix(object):
 
         Parameters
         ----------
-        A : 3x3 array or HomoMatrix
+        a : 3x3 array or HomoMatrix
 
         Returns
         -------
         HomoMatrix with the A @ self multiplication
         """
 
-        if isinstance(A, HomoMatrix):
-            newHM = cp.copy(A)
-            newHM.homo_matrix = A.homo_matrix @ self.homo_matrix 
+        if isinstance(a, HomoMatrix):
+            newhm = cp.copy(a)
+            newhm.homo_matrix = a.homo_matrix @ self.homo_matrix
         else:
-            newHM = cp.copy(self)
-            newHM.homo_matrix = A @ self.homo_matrix
-        return newHM
+            newhm = cp.copy(self)
+            newhm.homo_matrix = a @ self.homo_matrix
+        return newhm
 
 
 class AlignmentBase(object):
@@ -150,9 +150,10 @@ class AlignmentBase(object):
     """
 
     def __init__(self, prealign, reference, convolve_prealign=None,
-                 convolve_reference=None, guess_translation=[0, 0],
-                 guess_rotation=0, verbose=True, header=None,
-                 transform_method=None, filter_params=None):
+                 convolve_reference=None, guess_translation=None,
+                 guess_rotation=None, verbose=True, header=None,
+                 transform_method=None, transform_method_kwargs=None,
+                 filter_params=None):
         """
         Runs the base alignment prep comment to all child alignment classes.
         It will perform the initial filters needed to help with the alignment
@@ -182,13 +183,14 @@ class AlignmentBase(object):
             (I think). The default is None.
         guess_translation : 2-array, optional
             A starting translation you want to apply before running
-            the alignment. The default is [0,0]. Positive values translate
-            the image in the opposite direction. A value of [-3,-2] will translate
+            the alignment. The default is None (interpreted as [0,0]).
+            Positive values translate the image in the opposite
+            direction. A value of [-3,-2] will translate
             the image upwards by three pixels and to the right by 2 pixels.
         guess_rotation : float, optional
             A starting rotation you want to apply before running. Units are in
             degrees, and a positive value rotates counter-clockwise.
-            the alignment. The default is [0,0].
+            the alignment. The default is None (interpreted as 0).
         verbose : bool, optional
             Tells the class whether to print out information for the user.
             The default is True.
@@ -241,14 +243,18 @@ class AlignmentBase(object):
 
         # Applying a guess/known translation and or rotation
         if transform_method is not None:
-            self.translate_prealign(guess_translation)
-            self.transform_method = transform_method[0]
-            self.transform_method_kwargs = transform_method[1]
+            self.transform_method = transform_method
+            if transform_method_kwargs is None:
+                self.transform_method_kwargs = {}
+            else:
+                self.transform_method_kwargs = transform_method_kwargs
         else:
             if self.header is not None:
+                print("INFO = Using *reproject* to transform images")
                 self.transform_method = self.apply_transform_using_reproject
                 self.transform_method_kwargs = {} 
             else:
+                print("INFO = Using *ndimage* to transform images")
                 self.transform_method = self.apply_transform
                 self.transform_method_kwargs = {}
 
@@ -267,7 +273,7 @@ class AlignmentBase(object):
     @classmethod
     def from_fits(cls, filename_prealign, filename_reference, hdu_index_prealign=0,
                   hdu_index_reference=0, convolve_prealign=None, convolve_reference=None,
-                  guess_translation=[0, 0], guess_rotation=0, verbose=True,
+                  guess_translation=None, guess_rotation=None, verbose=True,
                   transform_method=None, **filter_params):
         """
         Initialises the class straight from the filepaths
@@ -302,7 +308,7 @@ class AlignmentBase(object):
         guess_rotation : float, optional
             A starting rotation you want to apply before running. Units are in
             degrees, and a positive value rotates counter-clockwise.
-            The default is 0.
+            The default is None (interpreted as 0).
         verbose : bool, optional
             Tells the class whether to print out information for the user.
             The default is True.
@@ -327,7 +333,7 @@ class AlignmentBase(object):
                    guess_rotation, verbose, header, transform_method, 
                    filter_params)
 
-    def _update_transformation_matrix(self, new_rotation=0, new_translation=[0, 0],
+    def _update_transformation_matrix(self, new_rotation=None, new_translation=None,
                                       new_homography_matrix=None):
         """
         Updates the transformation matrix to the new solution found
@@ -348,13 +354,21 @@ class AlignmentBase(object):
         None
 
         """
+        # If no homography matrix is provided we create it using the 
+        # new rotation and new translation parameters. 
+        # We have to change the sign of the translation, otherwise
+        # it will be wrong
         if new_homography_matrix is None:
-            new_homography_matrix = au.create_euclid_homography_matrix(new_rotation,
-                -np.array(new_translation), rotation_first=True)
+            if new_translation is None:
+                new_translation = [0., 0.]
+            if new_rotation is None:
+                new_rotation = 0.
+            new_homography_matrix = au.create_euclid_homography_matrix(
+                new_rotation, -np.array(new_translation), rotation_first=True)
 
         self.matrix_transform = self.matrix_transform.adot(new_homography_matrix)
 
-    def apply_transform_using_reproject(self, image, rotation=0, yx_offset=[0,0]):
+    def apply_transform_using_reproject(self, image, rotation=0, yx_offset=None):
         """Transforms an image using the given rotation and offsets using reproject
 
         Parameters
@@ -373,13 +387,16 @@ class AlignmentBase(object):
             image transformed using given rotation and translation
         """
 
-        transformed_image = au.transform_image_wcs(image, self.header, rotation, yx_offset)
+        if yx_offset is None:
+            yx_offset = np.zeros(2)
+        transformed_image = au.transform_image_wcs(image, self.header,
+                                                   rotation, yx_offset)
         self.print.applied_rotation(rotation)
         self.print.applied_translation(yx_offset)
 
         return transformed_image
 
-    def apply_transform(self, image, rotation=0, yx_offset=[0,0]):
+    def apply_transform(self, image, rotation=0, yx_offset=None):
         """Transforms an image using the given rotation and offsets using
         skimage and scipy functions
 
@@ -405,7 +422,9 @@ class AlignmentBase(object):
             self.print.applied_rotation(rotation)
 
         # Looking at the sum of offset. Taking the square to avoid negatives.
-        if sum(yx_offset**2) != 0: 
+        if yx_offset is None:
+            yx_offset = np.zeros(2)
+        if sum(yx_offset**2) != 0:
             image_transformed = au.translate_image(image_transformed, yx_offset)
             self.print.applied_translation(yx_offset)
 
@@ -418,8 +437,6 @@ class AlignmentBase(object):
 
         Parameters
         ----------
-        image : 2d array
-            Image to have the current alignment solution applied to.
         method : func, optional
             method used for image warping. The default is None.
         **kwargs : `method` properties, optional
@@ -442,11 +459,13 @@ class AlignmentBase(object):
         if rotation != 0 or sum(yx_offset**2) != 0:
 
             try:
-                transformed_image = method(transformed_image, rotation, yx_offset, **kwargs)
+                transformed_image = method(transformed_image, rotation,
+                                           yx_offset, **kwargs)
 
             except ValueError:
                 transformed_image = transformed_image.byteswap().newbyteorder()
-                transformed_image = method(transformed_image, rotation, yx_offset, **kwargs)
+                transformed_image = method(transformed_image, rotation,
+                                           yx_offset, **kwargs)
 
         transformed_image_filtered = filter_image_for_analysis(image=transformed_image,
                                                                convolve=self.convolve_prealign,
@@ -464,7 +483,8 @@ class AlignmentCrossCorrelate(AlignmentBase):
     to work out the offset between two images.
     """
 
-    def fft_phase_correlation(self, prealign, reference, resolution=1000, **kwargs):
+    def fft_phase_correlation(self, prealign, reference, resolution=1000,
+                              **kwargs):
         """
         Method for performing the cross correlation between two images.
 
@@ -579,7 +599,8 @@ class AlignTranslationPCC(AlignmentCrossCorrelate):
         self.print.get_translation(shifts, self.translation)
 
         # Update the matrix
-        self._update_transformation_matrix(0, shifts)
+        self._update_transformation_matrix(new_rotation=0., 
+                                           new_translation=shifts)
 
         # Now getting the full shifts
         shifts = self.translation
@@ -648,10 +669,7 @@ class AlignHomography(object):
 
     """
 
-    def __init__(self, homography_matrix=None,
-                 reverse_order=False, 
-                 reverse_trans=True, min_samples=3,
-                 residual_threshold=0.5, max_trials=1000):
+    def __init__(self, homography_matrix=None):
         """Initialisation of the Homography class
         """
         self.homography_matrix = homography_matrix
@@ -687,6 +705,9 @@ class AlignHomography(object):
             Homography matrix outputs the solution representing a rotation followed
             by a translation. If you want the solution to translate, then rotate
             set this to True. The default is None (and will thus use the default).
+        reverse_trans: bool
+            Will impose a sign change in the offsets extracted from the homography
+            matrix.
 
         Returns
         -------
@@ -702,11 +723,12 @@ class AlignHomography(object):
 
         # Call to Ransac
         self.model_robust, inliers = ransac((original_xy, transformed_xy), method,
-                                       min_samples=min_samples, 
-                                       residual_threshold=residual_threshold,
-                                       max_trials=max_trials, **kwargs)
+                                            min_samples=min_samples,
+                                            residual_threshold=residual_threshold,
+                                            max_trials=max_trials, **kwargs)
 
         self.homography_matrix.homo_matrix = self.model_robust.params
+
 
 class AlignOpticalFlow(AlignmentBase, AlignHomography):
     """Optical flow is a gradient based method that find small changes between
@@ -720,11 +742,10 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     scaling is needed.
     """
 
-#    def __init__(self, prealign, reference):
-#        self.homography_matrix = None
-#        self.shifts = None
-#        self.rotation = None
-#        super().__init__(prealign, reference)
+    def __init__(self, prealign, reference):
+        super().__init__(prealign, reference)
+        self.default_kw_of = {'attachment': 10, 'tightness': 0.3, 'num_warp': 15,
+                              'num_iter': 10, 'tol': 0.0001, 'prefilter': False}
 
     def optical_flow(self, oflow_test=True, **kwargs):
         """
@@ -794,7 +815,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
         return xy_stacked, xy_stacked_pre
 
-
     def get_translation_rotation(self, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
                                  reverse_order=False, 
@@ -835,8 +855,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             to the reference grid.
 
         """
-        self.default_kw_of = {'attachment': 10, 'tightness': 0.3, 'num_warp': 15,
-                         'num_iter': 10, 'tol': 0.0001, 'prefilter': False}
 
         # Get keywords from kwargs to pass on to the optical flow
         kwargs_of = {'oflow_test': oflow_test}
@@ -867,10 +885,9 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         self._update_transformation_matrix(new_homography_matrix=self.homography_matrix)
 
     def get_iterate_translation_rotation(self, niter=1, num_per_dimension=50,
-                                 homography_method=transform.EuclideanTransform,
-                                 reverse_order=False, 
-                                 reverse_trans=True, oflow_test=True,
-                                 **kwargs):
+                                         homography_method=transform.EuclideanTransform,
+                                         reverse_order=False, reverse_trans=True,
+                                         oflow_test=True, **kwargs):
         """If the solution is offset by more than ~5 pixels, optical flow struggles
         to match up the pixels. This method gets around this by applying optical
         flow multiple times to that the shifts and rotations converge to a solution.
@@ -897,6 +914,9 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             rotation, then translation, set this to True. The default is False.
         reverse_trans : bool
             When True, the shifts will be multiplied by a -1 sign. Default is True.
+        oflow_test: bool
+            If set to True (default), will use set of parameters for optical flow
+            which makes it fast (but not necessarily accurate).
         **kwargs: additional arguments
             Those arguments will be passed on to ransac in the homography
             calculation.
@@ -912,8 +932,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
         """
         for i in range(niter):
-            # This finds
             self.get_translation_rotation(num_per_dimension, homography_method,
                                           reverse_order, reverse_trans,
                                           oflow_test=oflow_test, **kwargs)
-

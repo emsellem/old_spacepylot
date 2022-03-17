@@ -6,7 +6,7 @@ Created on Thu Nov 11 20:46:37 2021
 """
 __author__ = "Elizabeth Watkins"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
+__license__ = "MIT License"
 __contact__ = "<liz@email"
 
 import numpy as np
@@ -46,7 +46,7 @@ def fix_tight_layout(x_length, y_length, gridding, wspace=0, hspace=None,
         Length of data to be displayed on the x axis.
     y_length : float
         Length of data to be displayed on the y axis.
-    gridding : 2-tuple
+    gridding : (int, int)
         The subplot grid as rows and columns.
     wspace : float, optional
         White space between subplots on the same row. The default is 0.
@@ -77,7 +77,7 @@ def fix_tight_layout(x_length, y_length, gridding, wspace=0, hspace=None,
     if hspace is None:
         hspace = wspace/float(aspect)
 
-    fig_width = fig_height * fig_aspect * (m + (m - 1) * wspace)\
+    fig_width = fig_height * fig_aspect * (m + (m - 1) * wspace) \
                 / ((n + (n - 1) * hspace) * aspect)
 
     fig_size = (fig_width, fig_height)
@@ -129,7 +129,28 @@ def add_subplot(gs, subplot_pos, subplot_size=(1, 1), fig=None):
     return ax
 
 
-def initialise_fig_ax(fig_name=None, fig_size=None, header=None, grid=[1,1]):
+def initialise_fig_ax(fig_name=None, fig_size=None, header=None, grid=None):
+    """
+    Initialise the figure axis with x and y pixels labels and the gridding
+    needed for plotting
+
+    Parameters
+    ----------
+    fig_name: str
+        Name of the figure
+    fig_size: tuple
+        Size of the figure
+    header: header
+    grid: tuple or list
+       2 numbers to give the gridding set
+
+    Returns
+    -------
+    fig: figures
+    axs: axis
+    """
+    if grid is None:
+        grid = [1, 1]
     fig, gs = create_gsgrid(figure_name=fig_name, plot_gridding=grid,
                             figsize=fig_size)
 
@@ -153,9 +174,9 @@ def make_red_blue_overlay(red_image, blue_image):
 
     Parameters
     ----------
-    red_image : 2darray
+    red_image : ndarray
         2d array containing the red channel image
-    blue_image : 2d array
+    blue_image : ndarray
          2d array containing the blue/cyan channel image.
 
     Returns
@@ -167,6 +188,9 @@ def make_red_blue_overlay(red_image, blue_image):
     """
     red_shape = red_image.shape
     blue_shape = blue_image.shape
+    if blue_shape != red_shape:
+        print("ERROR: the two images should have the same shape")
+        return None
 
     rgb_image = np.zeros([*red_shape, 3])
 
@@ -178,6 +202,7 @@ def make_red_blue_overlay(red_image, blue_image):
     rgb_image[..., 2] = blue_image
 
     return rgb_image
+
 
 def crop_data(data, border=10):
     """Crop a 2D data and return it cropped after a border
@@ -196,20 +221,21 @@ def crop_data(data, border=10):
     cdata: 2d array
         Cropped data array
     """
-    if border <= 0 :
+    if border <= 0:
         return data
 
     if data.ndim != 2:
-        upipe.print_warning("Input data to crop is not 2, "
-                      "returning the original data")
+        print("WARNING: Input data to crop is not 2, "
+              "returning the original data")
         return data
 
     if (data.shape[0] > 2 * border) & (data.shape[1] > 2 * border):
         return data[border:-border, border:-border]
     else:
-        upipe.print_warning("Data is not being cropped, as shape is {0} "
-             " while border is {1}".format(data.shape, border))
+        print("WARNING: Data is not being cropped, as shape is {0} "
+              " while border is {1}".format(data.shape, border))
         return data
+
 
 def get_flux_range(data, low=2, high=98, border=25):
     """Get the range of fluxes within the array
@@ -239,6 +265,7 @@ def get_flux_range(data, low=2, high=98, border=25):
         lperc, hperc = 0., 1.
 
     return lperc, hperc
+
 
 def make_contours(comp_image, ref_image, ax=None, title='', 
                   **kwargs):
@@ -279,17 +306,19 @@ def make_contours(comp_image, ref_image, ax=None, title='',
                          origin='lower', linestyles='solid')
     # plotting the second contour - reference image
     refset = ax.contour(np.log10(ref_image), levels=levels,
-                                 colors='r', origin='lower', alpha=0.5, 
-                                 linestyles='solid')
+                        colors='r', origin='lower', alpha=0.5,
+                        linestyles='solid')
     ax.set_aspect('equal')
-    h1,_ = compset.legend_elements()
-    h2,_ = refset.legend_elements()
+    h1, _ = compset.legend_elements()
+    h2, _ = refset.legend_elements()
     ax.legend([h1[0], h2[0]], ['COMP', 'REF'])
     ax.set_title(title)
 
     return ax
 
-def make_division(comp_image, ref_image, ax=None, title='', **kwargs):
+
+def make_division(comp_image, ref_image, ax=None, title='',
+                  percentage=5):
     """Show the division between the two images
 
     Parameters
@@ -313,17 +342,15 @@ def make_division(comp_image, ref_image, ax=None, title='', **kwargs):
     if ax is None:
         ax = plt.gca()
 
-    # Percentage
-    percentage = kwargs.pop('percentage', 5.0)
-
     # Show the percentage division
     ratio = 100. * (ref_image - comp_image) / (comp_image + 1.e-12)
     im = ax.imshow(ratio, vmin=-percentage, vmax=percentage)
-    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+    _ = plt.colorbar(im, ax=ax, shrink=0.8)
 
     ax.set_title(title)
 
     return ax
+
 
 def plot_rgb(rgb_image, ax=None, title='', **kwargs):
     """Plots given rgb array
@@ -413,8 +440,8 @@ class AlignmentPlotting:
     """Contains tools for plotting and inspecting the alignment
     """
 
-    def __init__(self, prealign, reference, rotation=0, shifts=[0,0],
-                 header=None, v=None, u=None, rotation_fit={}):
+    def __init__(self, prealign, reference, rotation=0, shifts=None,
+                 header=None, v=None, u=None, rotation_fit=None):
         """Initialise the object to show the difference between the prealign and align
         compared to a reference image for a given rotation and translation.
         Rotation is applied first, then translation
@@ -456,15 +483,21 @@ class AlignmentPlotting:
         self.prealign = prealign
         self.reference = reference
         self.rotation = rotation
-        self.shifts = shifts
+        if shifts is None:
+            self.shifts = [0., 0.]
+        else:
+            self.shifts = shifts
         self.header = header
         self.v = v
         self.u = u
-        self.rotation_fit = rotation_fit
+        if rotation_fit is None:
+            self.rotation_fit = {}
+        else:
+            self.rotation_fit = rotation_fit
 
         image_shape = prealign.shape
 
-        if self.header != None:
+        if self.header is not None:
             self.aligned = au.transform_image_wcs(self.prealign, self.header,
                                                   self.rotation, self.shifts)
         else:
@@ -474,10 +507,12 @@ class AlignmentPlotting:
                 self.prealign = self.prealign.byteswap().newbyteorder()
                 rotation_corrected = au.rotate_image(self.prealign, self.rotation)
 
-        self.aligned = au.translate_image(rotation_corrected, self.shifts)
+            self.aligned = au.translate_image(rotation_corrected, self.shifts)
 
-        self.fig_size, self.fig_params = fix_tight_layout(*image_shape[::-1],
-                                                          [1, 2], fig_height=7)
+        self.fig_size, self.fig_params = fix_tight_layout(image_shape[-1],
+                                                          image_shape[-2],
+                                                          (1, 2),
+                                                          fig_height=7)
 
     @classmethod
     def from_fits(cls, filename_prealign, filename_reference, rotation,
@@ -513,9 +548,6 @@ class AlignmentPlotting:
         hdu_index_reference : int or str, optional
             Index or dict name for reference image if the hdu object has
             multiple pbjects. The default is 0.
-        rotation_fit : dict, optional
-           Dictionary parameters showing the rotational solution found using
-           the iterative phase cross correlation method. The default is {}.
 
         Returns
         -------
@@ -531,8 +563,9 @@ class AlignmentPlotting:
                    header=header, v=v, u=u)
 
     @classmethod
-    def from_align_object(cls, align_object, rotation=0, shifts=[0,0],
-                          header=None, v=None, u=None, rotation_fit={}):
+    def from_align_object(cls, align_object, rotation=0, shifts=None,
+                          header=None, v=None, u=None,
+                          rotation_fit=None):
         """Initialises the class given an alignment object that contains the same
         attributes needed to plot the alignment, with an alignment solution
 
@@ -540,7 +573,8 @@ class AlignmentPlotting:
         ----------
         cls : obj
             object version of self
-        align_object :
+        align_object : align object
+            Given align object.
         rotation : float
             Rotation to apply to the prealign image in degrees Posative values
             rotate anti clockwise and negative rotate clockwise.
@@ -548,16 +582,17 @@ class AlignmentPlotting:
             The y and x shift offset bewtween the prealign and reference image
             Posative values shift the prealign in the negative direction i.e
             A coordinate of 3,3, with an offser of 1,1 will be shifted to 2,2.
-        header:
+        header: header
+            Fits header.
         v : 2d-array, optional
             y component of the vectors describing the offset between the prealign
             and the reference image. The default is None.
         u : 2d-array, optional
             x component of the vectors describing the offset between the prealign
             and the reference image. The default is None.
-       rotation_fit : dict, optional
+        rotation_fit: dict
            Dictionary parameters showing the rotational solution found using
-           the iterative phase cross correlation method. The default is {}.
+           the iterative phase cross correlation method. The default is None.
 
         Returns
         -------
@@ -575,8 +610,13 @@ class AlignmentPlotting:
             print("Plot Input trans: ", align_object.translation)
             print("Signs ", align_object.matrix_transform.reverse_order, align_object.matrix_transform.reverse_trans)
             shifts = align_object.translation
+            toto = align_object.translation
+            print("Plot output shifts: ", shifts)
+            print("Plot output toto: ", toto)
+            print("Plot Input trans2: ", align_object.translation)
         except AttributeError:
-            pass
+            if shifts is None:
+                shifts = [0., 0.]
         try:
             v = align_object.v
         except AttributeError:
@@ -592,7 +632,8 @@ class AlignmentPlotting:
         try:
             rotation_fit = align_object.rotation_fit
         except AttributeError:
-            pass
+            if rotation_fit is None:
+                rotation_fit = {}
 
         return cls(data_prealign, data_reference, rotation, shifts,
                    header, v, u, rotation_fit)
@@ -646,13 +687,10 @@ class AlignmentPlotting:
             Matplotlib axis object for the contours
         """
 
-
-        fig, axs = initialise_fig_ax(
-            fig_name='divcontours',
-            fig_size=self.fig_size,
-            header=self.header,
-            grid=[1, 2]
-        )
+        fig, axs = initialise_fig_ax(fig_name='divcontours',
+                                     fig_size=self.fig_size,
+                                     header=self.header,
+                                     grid=[1, 2])
 
         ax0 = make_division(self.aligned, self.reference, ax=axs[0], 
                             title=titles['after']['division'],
@@ -751,7 +789,7 @@ class AlignmentPlotting:
         plot_vectors(v_sparse, u_sparse, y_sparse, x_sparse, ax)
 
     def illustrate_vector_fields(self, v=None, u=None, num_per_dimension=20,
-                                 average_type=np.nanmean, avg_kwargs={}):
+                                 average_type=np.nanmean, avg_kwargs=None):
         """
         Plots the given vector field over the magnitude of the vector
         alongside the same vector field after subtracting the average
@@ -792,6 +830,8 @@ class AlignmentPlotting:
         if v is None or u is None:
             raise ValueError('yx vector information has not been supplied')
 
+        if avg_kwargs is None:
+            avg_kwargs = {}
         v_mean, u_mean = average_flow_vector(v, u, average_type, **avg_kwargs)
         v_centred = v-v_mean
         u_centred = u-u_mean

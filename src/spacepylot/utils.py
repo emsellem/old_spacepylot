@@ -6,7 +6,7 @@ Created on Thu Nov 11 20:50:06 2021
 """
 __author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
+__license__ = "MIT License"
 __contact__ = "<liz@email"
 
 import numpy as np
@@ -104,7 +104,7 @@ class VerbosePrints:
 
         if self.verbose and rotation_angle != 0:
             print('\nAdditional rotation of: \n'
-                 f'theta={rotation_angle:4f} degrees '
+                  f'theta={rotation_angle:4f} degrees '
                   'has been applied.')
 
     def get_translation(self, shifts, added_shifts=(0, 0)):
@@ -157,6 +157,7 @@ class VerbosePrints:
             if added_rotation != 0:
                 tot_rot = rotation + added_rotation
                 print('Total rotation of %.4f degrees found' % tot_rot)
+
 
 def _split(size, num):
     """
@@ -246,7 +247,7 @@ def _remove_image_border(image, border):
 
 def filter_image_for_analysis(image, histogram_equalisation=False,
                               remove_boundary_pixels=25, convolve=None,
-                              hpf=None, hpf_kwargs={}):
+                              hpf=None, hpf_kwargs=None):
     """
     The function that controls how the prealign and reference image are
     filtered before running the alignment
@@ -291,7 +292,8 @@ def filter_image_for_analysis(image, histogram_equalisation=False,
 
     # Remove some frequencies to make alignment more robust vs noise
     if hpf is not None:
+        if hpf_kwargs is None:
+            hpf_kwargs = {}
         image = hpf(image, **hpf_kwargs)
 
     return image
-

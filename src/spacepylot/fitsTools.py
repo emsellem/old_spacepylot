@@ -6,7 +6,7 @@ Created on Wed Nov  4 15:43:22 2020
 """
 __author__ = "Elizabeth Watkins, Eric Emsellem"
 __copyright__ = "Elizabeth Watkins"
-__license__   = "MIT License"
+__license__ = "MIT License"
 __contact__ = "<liz@email"
 
 from astropy.wcs import WCS
@@ -147,15 +147,17 @@ def subfigure_wsc(figure_number, fits_headers, fontsize='medium',
     and allows for sub figures. The Subfigures all have equal gridding
     User needs to adjust the wsc type to match the header. Sky coordinates
     must be the same type i.e., all galactic, or all Ra and dec etc.
-    To tweak any ticks, labels ect, see the documentation here:
+    To tweak any ticks, labels etc, see the documentation here:
     http://wcsaxes.readthedocs.io/en/latest/ticks_labels_grid.html#
     """
     # If just 1 plot, might enter header not in a list format.
     if not isinstance(fits_headers, list):
         fits_headers = [fits_headers]
     print(len(fits_headers))
+
     set_wcs_grid = set_wcs_type(fits_headers[0], wsc_type)
 
+    # Defining the figure
     fig, gs = create_gsgrid(figure_number, plot_gridding)
 
     amount_of_plots = plot_gridding[0] * plot_gridding[1]
@@ -314,10 +316,10 @@ def make_some_grid(amount):
 
     num_factors = len(factors)
     if num_factors % 2 == 1:
-        grid = (num_factors - 1) / 2
+        grid = (num_factors - 1) // 2
         return [factors[grid], factors[grid]]
     else:
-        grid = num_factors / 2
+        grid = num_factors // 2
         return [factors[grid - 1], factors[grid]]
 
 
@@ -344,7 +346,7 @@ def remove_y_ticker_labels_for_subplots(*axes_objects):
     plt.setp([ax.get_yticklabels() for ax in axes_objects[1:]], visible=False)
 
 
-def remove_overlapping_tickers_for_horizontal_subplots(bin_adjust=0, *axes_objects):
+def remove_overlapping_tickers_for_horizontal_subplots(*axes_objects):
     """This removes overlapping ticklabels from subplots which have no hspace.
     """
     remove_y_ticker_labels_for_subplots(*axes_objects)
