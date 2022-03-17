@@ -346,7 +346,7 @@ def remove_y_ticker_labels_for_subplots(*axes_objects):
     plt.setp([ax.get_yticklabels() for ax in axes_objects[1:]], visible=False)
 
 
-def remove_overlapping_tickers_for_horizontal_subplots(*axes_objects):
+def remove_overlapping_tickers_for_horizontal_subplots(bin_adjust=0, *axes_objects):
     """This removes overlapping ticklabels from subplots which have no hspace.
     """
     remove_y_ticker_labels_for_subplots(*axes_objects)

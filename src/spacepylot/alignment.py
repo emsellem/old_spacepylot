@@ -742,8 +742,8 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     scaling is needed.
     """
 
-    def __init__(self, prealign, reference):
-        super().__init__(prealign, reference)
+    def __init__(self, prealign, reference, **kwargs):
+        super().__init__(prealign, reference, **kwargs)
         self.default_kw_of = {'attachment': 10, 'tightness': 0.3, 'num_warp': 15,
                               'num_iter': 10, 'tol': 0.0001, 'prefilter': False}
 

@@ -221,10 +221,10 @@ def get_shifts_from_homography_matrix(homography_matrix,
     if reverse_order:
         shifts = correct_homography_order(homography_matrix)
     else:
-        shifts = homography_matrix[:2, -1][::-1]
+        shifts = cp.copy(homography_matrix[:2, -1][::-1])
 
     if reverse_trans:
-        shifts *= -1
+        shifts = shifts * -1
 
     return shifts
 

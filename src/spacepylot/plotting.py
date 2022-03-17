@@ -607,13 +607,8 @@ class AlignmentPlotting:
         except AttributeError:
             pass
         try:
-            print("Plot Input trans: ", align_object.translation)
-            print("Signs ", align_object.matrix_transform.reverse_order, align_object.matrix_transform.reverse_trans)
             shifts = align_object.translation
             toto = align_object.translation
-            print("Plot output shifts: ", shifts)
-            print("Plot output toto: ", toto)
-            print("Plot Input trans2: ", align_object.translation)
         except AttributeError:
             if shifts is None:
                 shifts = [0., 0.]
