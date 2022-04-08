@@ -34,7 +34,7 @@ class HomoMatrix(object):
     """
     Class to embed a 3x3 homographic or transformation matrix
     """
-    def __init__(self, homo_matrix=None, reverse_order=False, reverse_trans=True):
+    def __init__(self, homo_matrix=None, reverse_order=False, reverse_trans=False):
         """Initialise the homography matrix and the reverse options
         """
         if homo_matrix is None:
@@ -818,7 +818,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     def get_translation_rotation(self, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
                                  reverse_order=False, 
-                                 reverse_trans=True, 
+                                 reverse_trans=False,
                                  oflow_test=True, **kwargs):
         """Works out the translation and rotation using homography once
 
@@ -837,7 +837,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             If the order that a user will use to  correct the alignment is NOT
             rotation, then translation, set this to True. The default is False.
         reverse_trans : bool
-            When True, the shifts will be multiplied by a -1 sign. Default is True.
+            When True, the shifts will be multiplied by a -1 sign. Default is False.
         oflow_test: bool
             When True (default), using test values to speed things up.
             If False, it will use more optimal values but that will slow things down
@@ -886,7 +886,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
     def get_iterate_translation_rotation(self, niter=1, num_per_dimension=50,
                                          homography_method=transform.EuclideanTransform,
-                                         reverse_order=False, reverse_trans=True,
+                                         reverse_order=False, reverse_trans=False,
                                          oflow_test=True, **kwargs):
         """If the solution is offset by more than ~5 pixels, optical flow struggles
         to match up the pixels. This method gets around this by applying optical

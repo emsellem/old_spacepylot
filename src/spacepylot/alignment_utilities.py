@@ -99,7 +99,7 @@ def create_euclid_homography_matrix(rotation, translation, rotation_first=True):
 def homography_on_grid_points(original_xy, transformed_xy,
                               method=transform.EuclideanTransform,
                               reverse_order=False,
-                              reverse_trans=True,
+                              reverse_trans=False,
                               **kwargs):
     """
     Finds the offset between two images by estimating the matrix transform needed
@@ -153,7 +153,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
         set this to True. The default is False.
     reverse_trans : bool
         Will impose a sign change on the offsets extracted from the homography
-        matrix. Default to True.
+        matrix. Default to False.
 
     Returns
     -------
@@ -196,7 +196,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
 
 def get_shifts_from_homography_matrix(homography_matrix, 
                                       reverse_order=False,
-                                      reverse_trans=True):
+                                      reverse_trans=False):
     """Extracting the shift from an homography matrix
 
     Parameters
@@ -223,8 +223,8 @@ def get_shifts_from_homography_matrix(homography_matrix,
     else:
         shifts = cp.copy(homography_matrix[:2, -1][::-1])
 
-    if reverse_trans:
-        shifts = shifts * -1
+#    if reverse_trans:
+    shifts = shifts * -1
 
     return shifts
 
