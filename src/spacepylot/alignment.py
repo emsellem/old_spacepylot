@@ -26,7 +26,7 @@ import copy as cp
 from . import alignment_utilities as au
 from .alignment_utilities import (get_shifts_from_homography_matrix,
                                   get_rotation_from_homography_matrix)
-from .utils import VerbosePrints, filter_image_for_analysis, _split
+from .utils import VerbosePrints, filter_image_for_analysis, _split, default_kw_opticalflow
 from .params import pcc_params
 
 
@@ -34,14 +34,13 @@ class HomoMatrix(object):
     """
     Class to embed a 3x3 homographic or transformation matrix
     """
-    def __init__(self, homo_matrix=None, reverse_order=False, reverse_trans=False):
+    def __init__(self, homo_matrix=None, reverse_order=False):
         """Initialise the homography matrix and the reverse options
         """
         if homo_matrix is None:
             self.homo_matrix = np.identity(3)
         else:
             self.homo_matrix = homo_matrix
-        self.reverse_trans = reverse_trans
         self.reverse_order = reverse_order
 
     @property
@@ -50,8 +49,7 @@ class HomoMatrix(object):
         matrix
         """
         return get_shifts_from_homography_matrix(self.homo_matrix,
-                                                 self.reverse_order,
-                                                 self.reverse_trans)
+                                                 self.reverse_order)
 
     @property
     def rotation_rad(self):
@@ -274,7 +272,7 @@ class AlignmentBase(object):
     def from_fits(cls, filename_prealign, filename_reference, hdu_index_prealign=0,
                   hdu_index_reference=0, convolve_prealign=None, convolve_reference=None,
                   guess_translation=None, guess_rotation=None, verbose=True,
-                  transform_method=None, **filter_params):
+                  transform_method=None, transform_method_kwargs=None, filter_params=None):
         """
         Initialises the class straight from the filepaths
 
@@ -314,6 +312,7 @@ class AlignmentBase(object):
             The default is True.
         transform_method : function
             A method for warping and image to a new grid. Default is None.
+        transform_method_kwargs : dict, optional
         filter_params : dict, optional
             A dictionary containing user defined parameters for the image filtering
             If the default is {}, uses the filter parameters stored in `pcc_params`
@@ -331,7 +330,7 @@ class AlignmentBase(object):
         return cls(data_prealign, data_reference, convolve_prealign,
                    convolve_reference, guess_translation,
                    guess_rotation, verbose, header, transform_method, 
-                   filter_params)
+                   transform_method_kwargs, filter_params)
 
     def _update_transformation_matrix(self, new_rotation=None, new_translation=None,
                                       new_homography_matrix=None):
@@ -364,7 +363,7 @@ class AlignmentBase(object):
             if new_rotation is None:
                 new_rotation = 0.
             new_homography_matrix = au.create_euclid_homography_matrix(
-                new_rotation, -np.array(new_translation), rotation_first=True)
+                new_rotation, np.array(new_translation), rotation_first=True)
 
         self.matrix_transform = self.matrix_transform.adot(new_homography_matrix)
 
@@ -516,6 +515,10 @@ class AlignmentCrossCorrelate(AlignmentBase):
 
         upsample_factor = kwargs.pop('upsample_factor', resolution)
 
+        if reference.shape != prealign.shape:
+            print("ERROR: input image shapes are not the same"
+                  f" reference has {reference.shape} "
+                  f" prealign has {prealign.shape}")
         shifts, error, phasediff = phase_cross_correlation(
             reference_image=reference,
             moving_image=prealign,
@@ -677,8 +680,7 @@ class AlignHomography(object):
     def homography_on_grid_points(self, original_xy, transformed_xy,
                                   method=transform.EuclideanTransform,
                                   reverse_order=None,
-                                  reverse_trans=None,
-                                  min_samples=3, residual_threshold=0.5, 
+                                  min_samples=3, residual_threshold=0.5,
                                   max_trials=1000, **kwargs):
         """Performs a fit to estimate the homography matrix that represents the grid
         transformation. Uses ransac to robustly eliminate vector outliers that
@@ -705,9 +707,6 @@ class AlignHomography(object):
             Homography matrix outputs the solution representing a rotation followed
             by a translation. If you want the solution to translate, then rotate
             set this to True. The default is None (and will thus use the default).
-        reverse_trans: bool
-            Will impose a sign change in the offsets extracted from the homography
-            matrix.
 
         Returns
         -------
@@ -718,8 +717,7 @@ class AlignHomography(object):
             to the reference grid.
 
         """
-        self.homography_matrix = HomoMatrix(reverse_order=reverse_order,
-                                            reverse_trans=reverse_trans)
+        self.homography_matrix = HomoMatrix(reverse_order=reverse_order)
 
         # Call to Ransac
         self.model_robust, inliers = ransac((original_xy, transformed_xy), method,
@@ -727,6 +725,9 @@ class AlignHomography(object):
                                             residual_threshold=residual_threshold,
                                             max_trials=max_trials, **kwargs)
 
+        homographic_solution = np.linalg.inv(self.model_robust.params)
+        homographic_solution[1, 0] = -homographic_solution[1, 0]
+        homographic_solution[0, 1] = -homographic_solution[0, 1]
         self.homography_matrix.homo_matrix = self.model_robust.params
 
 
@@ -742,10 +743,17 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     scaling is needed.
     """
 
-    def __init__(self, prealign, reference, **kwargs):
-        super().__init__(prealign, reference, **kwargs)
-        self.default_kw_of = {'attachment': 10, 'tightness': 0.3, 'num_warp': 15,
-                              'num_iter': 10, 'tol': 0.0001, 'prefilter': False}
+#     def __init__(self, prealign, reference, convolve_prealign=None,
+#                  convolve_reference=None, guess_translation=None,
+#                  guess_rotation=None, verbose=True, header=None,
+#                  transform_method=None, transform_method_kwargs=None,
+#                  filter_params=None):
+#         print("PASSING HERE")
+#         print(f"PREALIGN now {prealign}")
+#         super().__init__(prealign, reference, convolve_prealign, 
+#                          convolve_reference, guess_translation, 
+#                          guess_rotation, verbose, header, 
+#                          transform_method, transform_method_kwargs, filter_params)
 
     def optical_flow(self, oflow_test=True, **kwargs):
         """
@@ -772,7 +780,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             kwargs_of = {}
             print("WARNING: Optical Flow will run with test parameters values")
         else:
-            kwargs_of = self.default_kw_of
+            kwargs_of = default_kw_opticalflow
             # Overwriting the keywords in case those are provided
             for key in kwargs:
                 kwargs_of[key] = kwargs.pop(key)
@@ -818,7 +826,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     def get_translation_rotation(self, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
                                  reverse_order=False, 
-                                 reverse_trans=False,
                                  oflow_test=True, **kwargs):
         """Works out the translation and rotation using homography once
 
@@ -836,8 +843,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         reverse_order : bool, optional
             If the order that a user will use to  correct the alignment is NOT
             rotation, then translation, set this to True. The default is False.
-        reverse_trans : bool
-            When True, the shifts will be multiplied by a -1 sign. Default is False.
         oflow_test: bool
             When True (default), using test values to speed things up.
             If False, it will use more optimal values but that will slow things down
@@ -860,8 +865,8 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         kwargs_of = {'oflow_test': oflow_test}
 
         # Overwriting the keywords in case those are provided
-        # This uses the self.default_kw_of list of keys
-        for key in self.default_kw_of:
+        # This uses the default_kw_of list of keys
+        for key in default_kw_opticalflow:
             if key in kwargs:
                 kwargs_of[key] = kwargs.pop(key)
 
@@ -873,7 +878,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
                                        transformed_xy=prealign_grid_xy,
                                        method=homography_method,
                                        reverse_order=reverse_order,
-                                       reverse_trans=reverse_trans,
                                        **kwargs)
 
         # Printing and updating
@@ -886,7 +890,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
     def get_iterate_translation_rotation(self, niter=1, num_per_dimension=50,
                                          homography_method=transform.EuclideanTransform,
-                                         reverse_order=False, reverse_trans=False,
+                                         reverse_order=False,
                                          oflow_test=True, **kwargs):
         """If the solution is offset by more than ~5 pixels, optical flow struggles
         to match up the pixels. This method gets around this by applying optical
@@ -912,8 +916,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         reverse_order : bool, optional
             If the order that a user will use to  correct the alignment is NOT
             rotation, then translation, set this to True. The default is False.
-        reverse_trans : bool
-            When True, the shifts will be multiplied by a -1 sign. Default is True.
         oflow_test: bool
             If set to True (default), will use set of parameters for optical flow
             which makes it fast (but not necessarily accurate).
@@ -933,5 +935,5 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
         """
         for i in range(niter):
             self.get_translation_rotation(num_per_dimension, homography_method,
-                                          reverse_order, reverse_trans,
+                                          reverse_order,
                                           oflow_test=oflow_test, **kwargs)

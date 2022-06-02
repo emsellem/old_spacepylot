@@ -18,7 +18,8 @@ from skimage import exposure
 from .params import pcc_params
 from . import alignment_utilities as au
 
-
+default_kw_opticalflow = {'attachment': 10, 'tightness': 0.3, 'num_warp': 15,
+                          'num_iter': 10, 'tol': 0.0001, 'prefilter': False}
 class VerbosePrints:
     """
     General print statements to inform the user what the alignment algorithms

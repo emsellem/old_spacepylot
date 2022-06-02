@@ -99,7 +99,6 @@ def create_euclid_homography_matrix(rotation, translation, rotation_first=True):
 def homography_on_grid_points(original_xy, transformed_xy,
                               method=transform.EuclideanTransform,
                               reverse_order=False,
-                              reverse_trans=False,
                               **kwargs):
     """
     Finds the offset between two images by estimating the matrix transform needed
@@ -151,9 +150,6 @@ def homography_on_grid_points(original_xy, transformed_xy,
         Homography matrix outputs the solution representing a rotation followed
         by a translation. If you want the solution to translate, then rotate
         set this to True. The default is False.
-    reverse_trans : bool
-        Will impose a sign change on the offsets extracted from the homography
-        matrix. Default to False.
 
     Returns
     -------
@@ -186,8 +182,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
     # to True
     homography_matrix = model_robust.params
     shifts = get_shifts_from_homography_matrix(homography_matrix,
-                                               reverse_order, 
-                                               reverse_trans)
+                                               reverse_order)
     # rotation = np.rad2deg(np.arcsin(model_robust.rotation))
     rotation = get_rotation_from_homography_matrix(homography_matrix)
 
@@ -195,8 +190,7 @@ def homography_on_grid_points(original_xy, transformed_xy,
 
 
 def get_shifts_from_homography_matrix(homography_matrix, 
-                                      reverse_order=False,
-                                      reverse_trans=False):
+                                      reverse_order=False):
     """Extracting the shift from an homography matrix
 
     Parameters
@@ -205,9 +199,6 @@ def get_shifts_from_homography_matrix(homography_matrix,
         Homography matrix
     reverse_order: bool
         If True we need to use correct_homography_order to get
-        the shifts. Default to False
-    reverse_trans: bool
-        If True we multiply shifts by -1
         the shifts. Default to False
 
     Returns
@@ -222,9 +213,6 @@ def get_shifts_from_homography_matrix(homography_matrix,
         shifts = correct_homography_order(homography_matrix)
     else:
         shifts = cp.copy(homography_matrix[:2, -1][::-1])
-
-#    if reverse_trans:
-    shifts = shifts * -1
 
     return shifts
 
