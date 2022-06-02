@@ -291,9 +291,16 @@ def get_homography_format(info, remove_rotation=False):
     """
     try:
         if isinstance(info, align.HomoMatrix):
-            homography = copy.copy(info.homo_matrix)
+           homography = copy.copy(info.homo_matrix)
+#           homography[:2, -1] *= -1
+#           homography[0, 1] *= -1
+#           homography[1, 0] *= -1
+        elif len(info[1]) == 2:
+            homography = au.create_euclid_homography_matrix(*info)
+        else:
+            homography = copy.copy(info)
     except AttributeError:
-        if len(np.shape(info)) != 2:
+        if len(info[1]) == 2:
             homography = au.create_euclid_homography_matrix(*info)
         else:
             homography = copy.copy(info)

@@ -755,7 +755,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 #                          guess_rotation, verbose, header, 
 #                          transform_method, transform_method_kwargs, filter_params)
 
-    def optical_flow(self, oflow_test=True, **kwargs):
+    def optical_flow(self, oflow_test=False, **kwargs):
         """
         Performs the optical flow.
 
@@ -783,7 +783,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             kwargs_of = default_kw_opticalflow
             # Overwriting the keywords in case those are provided
             for key in kwargs:
-                kwargs_of[key] = kwargs.pop(key)
+                kwargs_of[key] = kwargs.get(key)
 
         prealign_filter_transformed = self.update_prealign()
         v, u = optical_flow_tvl1(self.reference_filter, prealign_filter_transformed,
@@ -826,7 +826,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
     def get_translation_rotation(self, num_per_dimension=50,
                                  homography_method=transform.EuclideanTransform,
                                  reverse_order=False, 
-                                 oflow_test=True, **kwargs):
+                                 oflow_test=False, **kwargs):
         """Works out the translation and rotation using homography once
 
         Parameters
