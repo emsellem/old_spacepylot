@@ -887,7 +887,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
         self._update_transformation_matrix(new_homography_matrix=self.homography_matrix)
 
-    def get_iterate_translation_rotation(self, niter=1, num_per_dimension=50,
+    def get_iterate_translation_rotation(self, nruns_opticalflow=1, num_per_dimension=50,
                                          homography_method=transform.EuclideanTransform,
                                          reverse_order=False,
                                          oflow_test=True, **kwargs):
@@ -899,7 +899,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 
         Parameters
         ----------
-        niter : int, optional
+        nruns_opticalflow : int, optional
             The number of times to perform optical flow to find the shifts and
             rotation. The default is 1, as normally we should use iterations
             within optical flow itself, and not from this stage.
@@ -932,7 +932,7 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
             The recovered rotation, in degrees.
 
         """
-        for i in range(niter):
+        for i in range(nruns_opticalflow):
             self.get_translation_rotation(num_per_dimension, homography_method,
                                           reverse_order,
                                           oflow_test=oflow_test, **kwargs)
