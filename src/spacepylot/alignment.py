@@ -728,8 +728,9 @@ class AlignHomography(object):
         homographic_solution = np.linalg.inv(self.model_robust.params)
         homographic_solution[1, 0] = -homographic_solution[1, 0]
         homographic_solution[0, 1] = -homographic_solution[0, 1]
-        self.homography_matrix.homo_matrix = self.model_robust.params
 
+        # self.homography_matrix.homo_matrix = self.model_robust.params # BUG
+        self.homography_matrix.homo_matrix = homographic_solution
 
 class AlignOpticalFlow(AlignmentBase, AlignHomography):
     """Optical flow is a gradient based method that find small changes between
@@ -748,8 +749,6 @@ class AlignOpticalFlow(AlignmentBase, AlignHomography):
 #                  guess_rotation=None, verbose=True, header=None,
 #                  transform_method=None, transform_method_kwargs=None,
 #                  filter_params=None):
-#         print("PASSING HERE")
-#         print(f"PREALIGN now {prealign}")
 #         super().__init__(prealign, reference, convolve_prealign, 
 #                          convolve_reference, guess_translation, 
 #                          guess_rotation, verbose, header, 

@@ -442,7 +442,7 @@ class MagnitudeOffset(object):
             just change the labels when plotting
         compare_param_2 :List containing float and 2 list,
             spacepylot.alignment.HomoMatrix or 3x3 ndarray
-            Contains the offset information for the first solution.
+            Contains the offset information for the second solution.
             If a list, is should be the rotation in degrees, and then
             a list of the yx offset i.e., `[0.2 [-3, 2]]`. If compare_param_2
             is not given, will use the alignment solution from the align object.
@@ -463,6 +463,7 @@ class MagnitudeOffset(object):
             header = op_align.header
 
         compare_param_1 = copy.copy(compare_param_1)
+        compare_param_2 = copy.copy(compare_param_2)
 
         u1, v1 = get_vectors_after_rotation(op_align, compare_param_1)
         u2, v2 = get_vectors_after_rotation(op_align, compare_param_2)
@@ -473,7 +474,9 @@ class MagnitudeOffset(object):
     def from_fits(cls, filename_prealign, filename_reference,
                   compare_param_1, compare_param_2,
                   hdu_index_prealign=0, hdu_index_reference=0,
-                  convolve_prealign=None, convolve_reference=None):
+                  convolve_prealign=None, convolve_reference=None,
+                  guess_translation=None, guess_rotation=None, verbose=True,
+                  transform_method=None, transform_method_kwargs=None, filter_params=None):
         """Initialise starting from file names
 
 
@@ -518,7 +521,9 @@ class MagnitudeOffset(object):
             filename_prealign=filename_prealign, filename_reference=filename_reference,
             convolve_prealign=convolve_prealign, convolve_reference=convolve_reference,
             hdu_index_prealign=hdu_index_prealign, hdu_index_reference=hdu_index_reference,
-            verbose=False)
+            guess_translation=guess_translation, guess_rotation=guess_rotation, verbose=verbose,
+            transform_method=transform_method, transform_method_kwargs=transform_method_kwargs, 
+            filter_params=filter_params)
 
         return MagnitudeOffset.from_op_align_object(op, compare_param_1,
                                                     compare_param_2, header=op.header)

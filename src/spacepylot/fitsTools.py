@@ -153,7 +153,6 @@ def subfigure_wsc(figure_number, fits_headers, fontsize='medium',
     # If just 1 plot, might enter header not in a list format.
     if not isinstance(fits_headers, list):
         fits_headers = [fits_headers]
-    print(len(fits_headers))
 
     set_wcs_grid = set_wcs_type(fits_headers[0], wsc_type)
 
